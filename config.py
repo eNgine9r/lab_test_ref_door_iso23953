@@ -32,3 +32,5 @@ LOG_FILE = LOG_DIR / "system.log"
 DEFAULT_OPEN_TIME = float(os.getenv("DEFAULT_OPEN_TIME", "2"))
 DEFAULT_DELAY = float(os.getenv("DEFAULT_DELAY", "1"))
 SHOWCASE_TYPE = os.getenv("SHOWCASE_TYPE", "medium temperature")
+
+LIGHT_RELAY_CHANNEL = int(os.getenv("LIGHT_RELAY_CHANNEL", "7"))

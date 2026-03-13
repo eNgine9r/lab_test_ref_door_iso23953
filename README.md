@@ -10,7 +10,10 @@ Browser (PC) → Flask Web Server (Raspberry Pi) → Door Logic / Controller →
 
 - Керування дверима (manual/automatic)
 - Лічильник циклів по дверях
-- Live графік циклів (Chart.js)
+- Відображення циклів у вигляді live-даних (без графіка)
+- Light relay control з авто-вимкненням після 12 годин day-тесту
+- Вибір мови: Українська / English
+- Автотема (light/dark) через prefers-color-scheme
 - Watchdog timeout (10s)
 - Fail-safe: всі реле OFF при помилках
 - Retry Modbus команд (до 3 разів)
@@ -74,4 +77,4 @@ sudo systemctl enable --now door_test_controller
 
 Додайте скриншоти:
 - dashboard screenshot
-- cycle graph
+- light relay status

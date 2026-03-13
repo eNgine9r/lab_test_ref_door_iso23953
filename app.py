@@ -49,8 +49,26 @@ state = {
     "showcase_type": config.SHOWCASE_TYPE,
     "door_count": config.DOOR_COUNT,
     "started_at": None,
-    "history": [],
+    "test_mode": "day",
+    "light_relay_on": True,
+    "light_off_after_seconds": 12 * 3600,
+    "light_channel": config.LIGHT_RELAY_CHANNEL,
 }
+
+
+def set_light(state_on: bool):
+    controller.write_coil(state["light_channel"], state_on)
+    state["light_relay_on"] = state_on
+    log_event("light relay ON" if state_on else "light relay OFF", "OK")
+
+
+def check_and_apply_light_schedule():
+    if not state["running"] or state["test_mode"] != "day" or not state["started_at"]:
+        return
+    started = datetime.fromisoformat(state["started_at"])
+    elapsed = (datetime.now() - started).total_seconds()
+    if elapsed >= state["light_off_after_seconds"] and state["light_relay_on"]:
+        set_light(False)
 
 
 def enter_fail_safe(reason: str):
@@ -60,6 +78,7 @@ def enter_fail_safe(reason: str):
         state["error_message"] = reason
     try:
         logic.safe_shutdown(config.DOOR_COUNT)
+        set_light(False)
     except Exception as exc:  # noqa: BLE001
         log_event(f"safe shutdown failed: {exc}", "ERROR")
     log_event(reason, "ERROR")
@@ -73,15 +92,6 @@ watchdog = SystemWatchdog(config.WATCHDOG_TIMEOUT, watchdog_timeout_handler)
 watchdog.start()
 
 
-def append_history():
-    point = {
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-        **counter.get_cycles(),
-    }
-    state["history"].append(point)
-    state["history"] = state["history"][-120:]
-
-
 def _run_test_loop():
     while True:
         with state_lock:
@@ -90,6 +100,8 @@ def _run_test_loop():
             open_time = state["open_time"]
             delay = state["delay_between_doors"]
             door_count = state["door_count"]
+
+        check_and_apply_light_schedule()
 
         try:
             controller.ping()
@@ -110,8 +122,8 @@ def _run_test_loop():
                     cycle_warning=lambda msg: log_event(msg, "WARN"),
                 )
                 counter.add_cycle(door)
-                append_history()
                 watchdog.tick()
+                check_and_apply_light_schedule()
             except Exception as exc:  # noqa: BLE001
                 enter_fail_safe(f"modbus error: {exc}")
                 return
@@ -137,23 +149,6 @@ def reconnect_worker():
 threading.Thread(target=reconnect_worker, daemon=True).start()
 
 
-def simulation_data_generator():
-    while True:
-        time.sleep(5)
-        if not config.SIMULATION_MODE:
-            continue
-        with state_lock:
-            if state["running"]:
-                continue
-        counter.add_cycle(0)
-        if config.DOOR_COUNT > 1 and int(time.time()) % 6 == 0:
-            counter.add_cycle(1)
-        append_history()
-
-
-threading.Thread(target=simulation_data_generator, daemon=True).start()
-
-
 @app.route("/")
 def root():
     return render_template("dashboard.html")
@@ -176,8 +171,10 @@ def start_test():
         state["delay_between_doors"] = float(payload.get("delay_between_doors", state["delay_between_doors"]))
         state["showcase_type"] = payload.get("showcase_type", state["showcase_type"])
         state["door_count"] = int(payload.get("door_count", state["door_count"]))
+        state["test_mode"] = payload.get("test_mode", "day")
         state["started_at"] = datetime.now().isoformat()
         logic.showcase_type = state["showcase_type"]
+        set_light(True)
 
     threading.Thread(target=_run_test_loop, daemon=True).start()
     log_event("test start", "OK")
@@ -190,6 +187,7 @@ def stop_test():
         state["running"] = False
         state["status"] = "STOPPED"
     logic.safe_shutdown(config.DOOR_COUNT)
+    set_light(False)
     log_event("test stop", "OK")
     return jsonify({"message": "stopped"})
 
@@ -197,7 +195,6 @@ def stop_test():
 @app.route("/reset", methods=["POST"])
 def reset_cycles():
     counter.reset()
-    append_history()
     log_event("cycles reset", "OK")
     return jsonify({"message": "reset"})
 
@@ -211,7 +208,6 @@ def manual_open(door: int):
         time.sleep(state["open_time"])
         logic.close_door(door - 1)
         counter.add_cycle(door - 1)
-        append_history()
         watchdog.tick()
         return jsonify({"message": f"door {door} cycled"})
     except Exception as exc:  # noqa: BLE001
@@ -219,9 +215,21 @@ def manual_open(door: int):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/light", methods=["POST"])
+def toggle_light():
+    payload = request.get_json(silent=True) or {}
+    value = bool(payload.get("on", False))
+    try:
+        set_light(value)
+        return jsonify({"light_relay_on": state["light_relay_on"]})
+    except Exception as exc:  # noqa: BLE001
+        enter_fail_safe(f"light relay error: {exc}")
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.route("/cycles")
 def get_cycles():
-    return jsonify({"cycles": counter.get_cycles(), "history": state["history"]})
+    return jsonify({"cycles": counter.get_cycles()})
 
 
 @app.route("/status")
@@ -233,6 +241,8 @@ def get_status():
             "last_event": state["last_event"],
             "error_message": state["error_message"],
             "doors": logic.get_states(),
+            "light_relay_on": state["light_relay_on"],
+            "test_mode": state["test_mode"],
         }
     )
 
@@ -243,10 +253,10 @@ def _shutdown():
         state["running"] = False
     watchdog.stop()
     logic.safe_shutdown(config.DOOR_COUNT)
+    set_light(False)
     controller.close()
 
 
 if __name__ == "__main__":
-    append_history()
     log_event("system start", "OK")
     app.run(host=config.HOST, port=config.PORT)
