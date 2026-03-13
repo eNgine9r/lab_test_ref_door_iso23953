@@ -1,0 +1,4 @@
+body { font-family: sans-serif; background: #f3f3f3; }
+.container { max-width: 900px; margin: 2rem auto; background: #fff; padding: 1rem; border-radius: 10px; }
+#doors { margin-top: 1rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.card { background: #e9eef9; padding: .6rem; border-radius: 8px; }
