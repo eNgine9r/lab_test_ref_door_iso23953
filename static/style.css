@@ -1,0 +1,11 @@
+body { font-family: Arial, sans-serif; margin: 0; background: #f5f6fa; }
+.container { max-width: 980px; margin: 0 auto; padding: 16px; }
+.panel { background: #fff; padding: 14px; border-radius: 10px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px 12px; border: 0; border-radius: 8px; cursor: pointer; background: #2d6cdf; color: #fff; }
+label { display: block; margin: 8px 0; }
+input, select { margin-left: 8px; }
+#doors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.door { padding: 8px; border-radius: 6px; background: #eee; }
+.door.open { background: #f8d66d; }
+.door.closed { background: #b8f7b8; }

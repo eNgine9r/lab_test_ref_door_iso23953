@@ -1,0 +1,14 @@
+[Unit]
+Description=Door Test Controller
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/door-test-system
+Environment=SIMULATION_MODE=0
+ExecStart=/usr/bin/python3 /home/pi/door-test-system/app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

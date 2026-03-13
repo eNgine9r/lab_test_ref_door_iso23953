@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Door Test Controller</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <main class="container">
+    <h1>Door Test Controller</h1>
+
+    <section class="panel">
+      <h2>System status</h2>
+      <p><strong>Status:</strong> <span id="status">-</span></p>
+      <p><strong>Test:</strong> <span id="running">-</span></p>
+      <p><strong>Last event:</strong> <span id="event">-</span></p>
+      <p><strong>Error:</strong> <span id="error">-</span></p>
+    </section>
+
+    <section class="panel">
+      <h2>Configuration</h2>
+      <label>Showcase type
+        <select id="showcase_type">
+          <option>medium temperature</option>
+          <option>low temperature</option>
+        </select>
+      </label>
+      <label>Doors (1-8)
+        <input id="door_count" type="number" min="1" max="8" value="4">
+      </label>
+      <label>Open time (s)
+        <input id="open_time" type="number" step="0.1" value="2">
+      </label>
+      <label>Delay (s)
+        <input id="delay_between_doors" type="number" step="0.1" value="1">
+      </label>
+    </section>
+
+    <section class="panel buttons">
+      <button id="start">Start test</button>
+      <button id="stop">Stop test</button>
+      <button id="reset">Reset cycles</button>
+      <button data-door="1">Open door 1</button>
+      <button data-door="2">Open door 2</button>
+      <button data-door="3">Open door 3</button>
+      <button data-door="4">Open door 4</button>
+    </section>
+
+    <section class="panel">
+      <h2>Door states</h2>
+      <div id="doors"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Cycle graph</h2>
+      <canvas id="cyclesChart"></canvas>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
