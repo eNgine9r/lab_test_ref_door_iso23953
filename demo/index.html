@@ -1,19 +1,103 @@
 <!doctype html>
-<html>
+<html lang="uk">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Door Test Demo</title>
+  <title>Door Test Controller — Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
   <main class="container">
-    <h1>Door Test Controller (Demo)</h1>
-    <p>Static GitHub Pages preview.</p>
-    <canvas id="chart"></canvas>
-    <div id="doors"></div>
+    <header class="header card">
+      <div>
+        <p class="eyebrow">GitHub Pages Demo</p>
+        <h1>Door Test Controller</h1>
+        <p class="sub">Сучасний UI-прев’ю без бекенда (генерація даних у браузері).</p>
+      </div>
+      <div class="status-wrap">
+        <span id="systemBadge" class="badge ok">SYSTEM READY</span>
+        <span id="testBadge" class="badge muted">TEST STOPPED</span>
+      </div>
+    </header>
+
+    <section class="layout">
+      <section class="card control-panel">
+        <h2>Параметри тесту</h2>
+        <div class="grid-2">
+          <label>Тип вітрини
+            <select id="showcaseType">
+              <option value="MT">MT — medium temperature</option>
+              <option value="LT">LT — low temperature</option>
+            </select>
+          </label>
+          <label>Кількість дверей
+            <input id="doorCount" type="number" min="1" max="8" value="4" />
+          </label>
+          <label>Open time (сек)
+            <input id="openTime" type="number" min="0.5" step="0.5" value="2" />
+          </label>
+          <label>Delay between doors (сек)
+            <input id="delayTime" type="number" min="0.5" step="0.5" value="1" />
+          </label>
+          <label>Інтервал оновлення демо (сек)
+            <input id="tickSeconds" type="number" min="1" step="1" value="5" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="startBtn" class="btn primary">Start test</button>
+          <button id="stopBtn" class="btn">Stop test</button>
+          <button id="resetBtn" class="btn ghost">Reset cycles</button>
+        </div>
+      </section>
+
+      <section class="card stats-panel">
+        <h2>System status</h2>
+        <div class="stats-grid">
+          <article class="stat-item">
+            <span>Режим</span>
+            <strong id="modeValue">MT</strong>
+          </article>
+          <article class="stat-item">
+            <span>Активні двері</span>
+            <strong id="doorsValue">4</strong>
+          </article>
+          <article class="stat-item">
+            <span>Загальні цикли</span>
+            <strong id="totalCycles">0</strong>
+          </article>
+          <article class="stat-item">
+            <span>Last event</span>
+            <strong id="lastEvent">System started</strong>
+          </article>
+        </div>
+      </section>
+    </section>
+
+    <section class="card chart-panel">
+      <div class="panel-head">
+        <h2>Cycle trend</h2>
+        <small id="chartHint">Оновлення кожні 5 сек</small>
+      </div>
+      <canvas id="chart"></canvas>
+    </section>
+
+    <section class="card">
+      <div class="panel-head">
+        <h2>Door states</h2>
+        <small>● open / closed</small>
+      </div>
+      <div id="doors" class="door-grid"></div>
+    </section>
   </main>
+
   <script src="dashboard.js"></script>
 </body>
 </html>
