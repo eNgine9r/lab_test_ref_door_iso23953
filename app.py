@@ -35,7 +35,7 @@ else:
 
     controller = ModbusController()
 connected = controller.connect()
-counter = CycleCounter(config.CYCLES_FILE, doors=config.DOOR_COUNT)
+counter = CycleCounter(config.CYCLES_FILE, doors=min(config.DOOR_COUNT, config.MAX_DOORS))
 logic = DoorLogic(controller, log_event, showcase_type=config.SHOWCASE_TYPE)
 
 state_lock = threading.Lock()
@@ -47,7 +47,7 @@ state = {
     "open_time": config.DEFAULT_OPEN_TIME,
     "delay_between_doors": config.DEFAULT_DELAY,
     "showcase_type": config.SHOWCASE_TYPE,
-    "door_count": config.DOOR_COUNT,
+    "door_count": min(config.DOOR_COUNT, config.MAX_DOORS),
     "started_at": None,
     "test_mode": "day",
     "light_relay_on": True,
@@ -84,7 +84,7 @@ def enter_fail_safe(reason: str):
         if not config.SIMULATION_MODE:
             state["modbus_connected"] = False
     try:
-        logic.safe_shutdown(config.DOOR_COUNT)
+        logic.safe_shutdown(config.MAX_DOORS)
         set_light(False)
     except Exception as exc:  # noqa: BLE001
         log_event(f"safe shutdown failed: {exc}", "ERROR")
@@ -127,6 +127,7 @@ def _run_test_loop():
                     delay,
                     tick=watchdog.tick,
                     cycle_warning=lambda msg: log_event(msg, "WARN"),
+                    on_transition=counter.add_transition_event,
                 )
                 counter.add_cycle(door)
                 watchdog.tick()
@@ -182,7 +183,8 @@ def start_test():
         state["open_time"] = float(payload.get("open_time", state["open_time"]))
         state["delay_between_doors"] = float(payload.get("delay_between_doors", state["delay_between_doors"]))
         state["showcase_type"] = payload.get("showcase_type", state["showcase_type"])
-        state["door_count"] = int(payload.get("door_count", state["door_count"]))
+        requested_doors = int(payload.get("door_count", state["door_count"]))
+        state["door_count"] = max(1, min(requested_doors, config.MAX_DOORS))
         state["test_mode"] = payload.get("test_mode", "day")
         state["started_at"] = datetime.now().isoformat()
         logic.showcase_type = state["showcase_type"]
@@ -198,7 +200,7 @@ def stop_test():
     with state_lock:
         state["running"] = False
         state["status"] = "STOPPED"
-    logic.safe_shutdown(config.DOOR_COUNT)
+    logic.safe_shutdown(config.MAX_DOORS)
     set_light(False)
     log_event("test stop", "OK")
     return jsonify({"message": "stopped"})
@@ -213,12 +215,12 @@ def reset_cycles():
 
 @app.route("/open/<int:door>", methods=["POST"])
 def manual_open(door: int):
-    if not 1 <= door <= config.DOOR_COUNT:
+    if not 1 <= door <= state["door_count"]:
         return jsonify({"error": "invalid door"}), 400
     try:
-        logic.open_door(door - 1)
+        logic.open_door(door - 1, on_transition=counter.add_transition_event)
         time.sleep(state["open_time"])
-        logic.close_door(door - 1)
+        logic.close_door(door - 1, on_transition=counter.add_transition_event)
         counter.add_cycle(door - 1)
         watchdog.tick()
         return jsonify({"message": f"door {door} cycled"})
@@ -241,7 +243,7 @@ def toggle_light():
 
 @app.route("/cycles")
 def get_cycles():
-    return jsonify({"cycles": counter.get_cycles()})
+    return jsonify({"cycles": counter.get_cycles(), "events": counter.get_events(limit=300)})
 
 
 @app.route("/status")
@@ -255,6 +257,7 @@ def get_status():
             "doors": logic.get_states(),
             "light_relay_on": state["light_relay_on"],
             "test_mode": state["test_mode"],
+            "door_count": state["door_count"],
             "modbus_connected": state["modbus_connected"],
             "modbus_port": state["modbus_port"],
         }
@@ -266,7 +269,7 @@ def _shutdown():
     with state_lock:
         state["running"] = False
     watchdog.stop()
-    logic.safe_shutdown(config.DOOR_COUNT)
+    logic.safe_shutdown(config.MAX_DOORS)
     try:
         set_light(False)
     except Exception:

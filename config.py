@@ -21,7 +21,7 @@ MODBUS_BYTESIZE = int(os.getenv("MODBUS_BYTESIZE", "8"))
 MODBUS_SLAVE_ID = int(os.getenv("MODBUS_SLAVE_ID", "1"))
 
 DOOR_COUNT = int(os.getenv("DOOR_COUNT", "4"))
-MAX_DOORS = 8
+MAX_DOORS = 6
 WATCHDOG_TIMEOUT = int(os.getenv("WATCHDOG_TIMEOUT", "10"))
 RECONNECT_INTERVAL = int(os.getenv("RECONNECT_INTERVAL", "5"))
 RETRY_LIMIT = int(os.getenv("RETRY_LIMIT", "3"))
@@ -33,6 +33,6 @@ DEFAULT_OPEN_TIME = float(os.getenv("DEFAULT_OPEN_TIME", "2"))
 DEFAULT_DELAY = float(os.getenv("DEFAULT_DELAY", "1"))
 SHOWCASE_TYPE = os.getenv("SHOWCASE_TYPE", "medium temperature")
 
-LIGHT_RELAY_CHANNEL = int(os.getenv("LIGHT_RELAY_CHANNEL", "7"))
+LIGHT_RELAY_CHANNEL = int(os.getenv("LIGHT_RELAY_CHANNEL", "5"))
 
 MODBUS_AUTODETECT = os.getenv("MODBUS_AUTODETECT", "1") in {"1", "true", "True"}

@@ -97,7 +97,7 @@ class ModbusController:
     def relay_off(self, channel: int) -> bool:
         return self.write_coil(channel, False)
 
-    def all_off(self, channels: int = 8):
+    def all_off(self, channels: int = 6):
         for ch in range(channels):
             self.relay_off(ch)
 

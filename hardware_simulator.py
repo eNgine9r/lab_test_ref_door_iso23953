@@ -4,7 +4,7 @@ import threading
 class HardwareSimulator:
     """In-memory relay/door state simulator for demo and CI runs."""
 
-    def __init__(self, channels: int = 8):
+    def __init__(self, channels: int = 6):
         self.relays = [False] * channels
         self._lock = threading.Lock()
 

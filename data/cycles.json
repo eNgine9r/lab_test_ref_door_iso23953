@@ -1,6 +1,11 @@
 {
-  "door1": 0,
-  "door2": 0,
-  "door3": 0,
-  "door4": 0
+  "cycles": {
+    "door1": 0,
+    "door2": 0,
+    "door3": 0,
+    "door4": 0,
+    "door5": 0,
+    "door6": 0
+  },
+  "events": []
 }

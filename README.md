@@ -2,10 +2,15 @@
 
 Door Test Controller — модульна система для Raspberry Pi для ресурсних тестів дверей вітрин через Modbus RTU (RS‑485).
 
+## Актуальна апаратна ціль
+
+Проєкт тепер орієнтований **лише на VRC-R6** (6 реле, 6 входів). VRC-C4/VRC-R8 більше не використовуємо.
+
 ## Що вже готово
 
 - Керування дверима (manual/automatic)
 - Лічильник циклів по дверях
+- Журнал подій циклів з timestamp для `door open/close`
 - Light relay control (auto OFF після 12 годин у `day` режимі)
 - Watchdog + fail-safe
 - Retry для Modbus команд
@@ -13,13 +18,13 @@ Door Test Controller — модульна система для Raspberry Pi д�
 
 ## Швидкий запуск на Raspberry Pi (без локальної мережі)
 
-> Мета цього етапу: **Raspberry має побачити USB/RS-485 адаптер і відповіді VRC модулю по Modbus RTU**.
+> Мета: **Raspberry має побачити USB/RS-485 адаптер і відповіді VRC-R6 по Modbus RTU**.
 
 ### 1) Підключення
 
 - Raspberry Pi ↔ USB-RS485 adapter
-- RS-485 adapter ↔ VRC-C4/VRC-R8
-- Встановіть параметри VRC:
+- RS-485 adapter ↔ VRC-R6
+- Параметри Modbus:
   - baudrate `9600`
   - parity `N`
   - stopbits `1`
@@ -39,7 +44,7 @@ cd /home/pi/door-test-system
 python tools/rs485_probe.py --slave 1 --baudrate 9600
 ```
 
-Якщо `"ok": true` — зв'язок з VRC підтверджено.
+Якщо `"ok": true` — зв'язок з VRC-R6 підтверджено.
 
 ### 4) Запуск сервісу локально на Raspberry
 
@@ -50,29 +55,18 @@ cd /home/pi/door-test-system
 
 За замовчуванням Flask підіймається на `127.0.0.1:5000` (без LAN).
 
-## Systemd автозапуск
+## API
 
-```bash
-sudo cp door_test_controller.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now door_test_controller
-sudo systemctl status door_test_controller
-```
+- `GET /cycles` повертає:
+  - `cycles`: лічильники циклів
+  - `events`: журнал подій `open/close` з часом та дверима
 
-## Важливі ENV параметри
-
-- `SIMULATION_MODE=0` — реальне обладнання
-- `MODBUS_AUTODETECT=1` — авто-пошук серійного порту
-- `MODBUS_PORT=/dev/ttyUSB0` — зафіксувати порт вручну
-- `MODBUS_SLAVE_ID=1`
-- `HOST=127.0.0.1`
-
-## Debug чекліст, якщо VRC не відповідає
+## Debug чекліст, якщо VRC-R6 не відповідає
 
 1. Перевірити A/B лінії RS-485 (інколи треба поміняти місцями).
-2. Перевірити що `slave id` на модулі = `MODBUS_SLAVE_ID`.
-3. Перевірити живлення модуля реле.
-4. Спробувати явно задати порт:
+2. Перевірити `slave id` на модулі.
+3. Перевірити живлення VRC-R6.
+4. Явно задати порт:
 
 ```bash
 MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 1 --baudrate 9600

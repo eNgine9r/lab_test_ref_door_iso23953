@@ -51,11 +51,11 @@ async function refresh() {
   document.getElementById('event').textContent = status.last_event;
   document.getElementById('error').textContent = status.error_message || '-';
   document.getElementById('lightStatus').textContent = status.light_relay_on ? 'ON' : 'OFF';
-  document.getElementById('cyclesData').textContent = JSON.stringify(cycles.cycles, null, 2);
+  document.getElementById('cyclesData').textContent = JSON.stringify({ cycles: cycles.cycles, recent_events: (cycles.events || []).slice(-20) }, null, 2);
 
   const doorsEl = document.getElementById('doors');
   doorsEl.innerHTML = '';
-  Object.entries(status.doors).slice(0, 8).forEach(([name, state]) => {
+  Object.entries(status.doors).slice(0, status.door_count || 6).forEach(([name, state]) => {
     const div = document.createElement('div');
     div.className = `door ${state}`;
     div.textContent = `${name} ● ${state}`;

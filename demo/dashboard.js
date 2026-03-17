@@ -13,7 +13,7 @@ const t = {
   }
 };
 
-const state = { running: false, timer: null, cycles: Array(8).fill(0), doors: Array(8).fill('closed'), lightOn: true };
+const state = { running: false, timer: null, cycles: Array(6).fill(0), doors: Array(6).fill('closed'), lightOn: true };
 
 function applyLang(lang) {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -24,7 +24,7 @@ function applyLang(lang) {
 }
 
 function doorCount() {
-  return Math.max(1, Math.min(8, Number(document.getElementById('doorCount').value) || 4));
+  return Math.max(1, Math.min(6, Number(document.getElementById('doorCount').value) || 4));
 }
 
 function render() {
