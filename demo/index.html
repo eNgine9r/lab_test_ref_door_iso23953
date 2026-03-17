@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Door Test Controller — Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <section class="card header">
+      <h1 data-i18n="title">Door Test Controller Demo</h1>
+      <label data-i18n="language">Language
+        <select id="langSelect">
+          <option value="uk">Українська</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="card grid">
+      <label data-i18n="showcase">Тип вітрини
+        <select id="showcaseType">
+          <option value="MT">MT</option>
+          <option value="LT">LT</option>
+        </select>
+      </label>
+      <label data-i18n="doors">Кількість дверей
+        <input id="doorCount" type="number" min="1" max="8" value="4" />
+      </label>
+      <label data-i18n="open_time">Open time (s)
+        <input id="openTime" type="number" min="0.5" step="0.5" value="2" />
+      </label>
+      <label data-i18n="delay">Delay (s)
+        <input id="delayTime" type="number" min="0.5" step="0.5" value="1" />
+      </label>
+      <label data-i18n="mode">Режим
+        <select id="testMode">
+          <option value="day" data-i18n="day">Day</option>
+          <option value="night" data-i18n="night">Night</option>
+        </select>
+      </label>
+      <label data-i18n="sim_hours">Симуляція годин тесту
+        <input id="simHours" type="number" min="0" step="1" value="0" />
+      </label>
+    </section>
+
+    <section class="card actions">
+      <button id="startBtn" data-i18n="start">Start test</button>
+      <button id="stopBtn" data-i18n="stop">Stop test</button>
+      <button id="resetBtn" data-i18n="reset">Reset cycles</button>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="light_title">Реле освітлення</h2>
+      <p><strong data-i18n="light_status">Стан:</strong> <span id="lightState">ON</span></p>
+      <p id="lightInfo">Day mode: auto OFF after 12h</p>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="door_states">Door states</h2>
+      <div id="doorsGrid" class="doors"></div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="cycles">Cycles</h2>
+      <pre id="cyclesOut"></pre>
+    </section>
+  </main>
+  <script src="dashboard.js"></script>
+</body>
+</html>
