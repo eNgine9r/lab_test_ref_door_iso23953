@@ -6,7 +6,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/pi/door-test-system
 Environment=SIMULATION_MODE=0
-ExecStart=/usr/bin/python3 /home/pi/door-test-system/app.py
+Environment=HOST=127.0.0.1
+Environment=MODBUS_AUTODETECT=1
+ExecStart=/home/pi/door-test-system/scripts/start_on_rpi.sh
 Restart=always
 RestartSec=3
 

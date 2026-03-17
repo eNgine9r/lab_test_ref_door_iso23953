@@ -10,7 +10,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 SIMULATION_MODE = os.getenv("SIMULATION_MODE", "0") in {"1", "true", "True"}
 
-HOST = os.getenv("HOST", "0.0.0.0")
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "5000"))
 
 MODBUS_PORT = os.getenv("MODBUS_PORT", "/dev/ttyUSB0")
@@ -34,3 +34,5 @@ DEFAULT_DELAY = float(os.getenv("DEFAULT_DELAY", "1"))
 SHOWCASE_TYPE = os.getenv("SHOWCASE_TYPE", "medium temperature")
 
 LIGHT_RELAY_CHANNEL = int(os.getenv("LIGHT_RELAY_CHANNEL", "7"))
+
+MODBUS_AUTODETECT = os.getenv("MODBUS_AUTODETECT", "1") in {"1", "true", "True"}

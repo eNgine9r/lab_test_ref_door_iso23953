@@ -1,80 +1,85 @@
 # Door Test Controller
 
-Door Test Controller — модульна система для Raspberry Pi, яка керує стендом ресурсних тестів дверей холодильних вітрин через Modbus RTU (RS-485), має веб-панель на Flask, лічильники циклів, графік у реальному часі, watchdog, fail-safe, та simulation mode.
+Door Test Controller — модульна система для Raspberry Pi для ресурсних тестів дверей вітрин через Modbus RTU (RS‑485).
 
-## Архітектура
-
-Browser (PC) → Flask Web Server (Raspberry Pi) → Door Logic / Controller → Modbus RTU → RS-485 → VRC-C4/VRC-R8.
-
-## Можливості
+## Що вже готово
 
 - Керування дверима (manual/automatic)
 - Лічильник циклів по дверях
-- Відображення циклів у вигляді live-даних (без графіка)
-- Light relay control з авто-вимкненням після 12 годин day-тесту
-- Вибір мови: Українська / English
-- Автотема (light/dark) через prefers-color-scheme
-- Watchdog timeout (10s)
-- Fail-safe: всі реле OFF при помилках
-- Retry Modbus команд (до 3 разів)
-- Автовідновлення зв'язку кожні 5с
-- Simulation mode без RS-485 обладнання
-- Статичний demo для GitHub Pages (`demo/`)
+- Light relay control (auto OFF після 12 годин у `day` режимі)
+- Watchdog + fail-safe
+- Retry для Modbus команд
+- Simulation mode без обладнання
 
-## Структура
+## Швидкий запуск на Raspberry Pi (без локальної мережі)
 
-```text
-door-test-system
-├── app.py
-├── config.py
-├── door_logic.py
-├── modbus_controller.py
-├── hardware_simulator.py
-├── cycle_counter.py
-├── watchdog.py
-├── templates/dashboard.html
-├── static/style.css
-├── static/dashboard.js
-├── demo/index.html
-├── data/cycles.json
-├── logs/system.log
-├── requirements.txt
-└── README.md
-```
+> Мета цього етапу: **Raspberry має побачити USB/RS-485 адаптер і відповіді VRC модулю по Modbus RTU**.
 
-## Запуск
+### 1) Підключення
+
+- Raspberry Pi ↔ USB-RS485 adapter
+- RS-485 adapter ↔ VRC-C4/VRC-R8
+- Встановіть параметри VRC:
+  - baudrate `9600`
+  - parity `N`
+  - stopbits `1`
+  - bytesize `8`
+  - slave id `1`
+
+### 2) Перевірити що Raspberry бачить RS-485 порт
 
 ```bash
-pip install -r requirements.txt
-python app.py
+ls /dev/ttyUSB* /dev/ttyACM* /dev/ttyAMA* /dev/ttyS* 2>/dev/null
 ```
 
-Відкрити: `http://127.0.0.1:5000` або на Raspberry `http://192.168.50.10`.
-
-## Simulation Mode
+### 3) Запустити Modbus probe
 
 ```bash
-SIMULATION_MODE=1 python app.py
+cd /home/pi/door-test-system
+python tools/rs485_probe.py --slave 1 --baudrate 9600
 ```
 
-У simulation mode всі реле/двері емулюються модулем `hardware_simulator.py`.
+Якщо `"ok": true` — зв'язок з VRC підтверджено.
+
+### 4) Запуск сервісу локально на Raspberry
+
+```bash
+cd /home/pi/door-test-system
+./scripts/start_on_rpi.sh
+```
+
+За замовчуванням Flask підіймається на `127.0.0.1:5000` (без LAN).
 
 ## Systemd автозапуск
-
-Приклад юніта у `door_test_controller.service`.
 
 ```bash
 sudo cp door_test_controller.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now door_test_controller
+sudo systemctl status door_test_controller
 ```
 
-## GitHub Pages Demo
+## Важливі ENV параметри
 
-Вміст `demo/` можна публікувати через GitHub Pages.
+- `SIMULATION_MODE=0` — реальне обладнання
+- `MODBUS_AUTODETECT=1` — авто-пошук серійного порту
+- `MODBUS_PORT=/dev/ttyUSB0` — зафіксувати порт вручну
+- `MODBUS_SLAVE_ID=1`
+- `HOST=127.0.0.1`
 
-## Screenshots
+## Debug чекліст, якщо VRC не відповідає
 
-Додайте скриншоти:
-- dashboard screenshot
-- light relay status
+1. Перевірити A/B лінії RS-485 (інколи треба поміняти місцями).
+2. Перевірити що `slave id` на модулі = `MODBUS_SLAVE_ID`.
+3. Перевірити живлення модуля реле.
+4. Спробувати явно задати порт:
+
+```bash
+MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 1 --baudrate 9600
+```
+
+5. Перевірити логи:
+
+```bash
+tail -f logs/system.log
+```

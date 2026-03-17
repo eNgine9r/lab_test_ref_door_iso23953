@@ -34,7 +34,7 @@ else:
     from modbus_controller import ModbusController
 
     controller = ModbusController()
-controller.connect()
+connected = controller.connect()
 counter = CycleCounter(config.CYCLES_FILE, doors=config.DOOR_COUNT)
 logic = DoorLogic(controller, log_event, showcase_type=config.SHOWCASE_TYPE)
 
@@ -53,10 +53,15 @@ state = {
     "light_relay_on": True,
     "light_off_after_seconds": 12 * 3600,
     "light_channel": config.LIGHT_RELAY_CHANNEL,
+    "modbus_connected": connected if not config.SIMULATION_MODE else True,
+    "modbus_port": getattr(controller, "active_port", lambda: "simulator")(),
 }
 
 
+
 def set_light(state_on: bool):
+    if not state.get("modbus_connected", True) and not config.SIMULATION_MODE:
+        raise RuntimeError("modbus not connected")
     controller.write_coil(state["light_channel"], state_on)
     state["light_relay_on"] = state_on
     log_event("light relay ON" if state_on else "light relay OFF", "OK")
@@ -76,6 +81,8 @@ def enter_fail_safe(reason: str):
         state["running"] = False
         state["status"] = "ERROR"
         state["error_message"] = reason
+        if not config.SIMULATION_MODE:
+            state["modbus_connected"] = False
     try:
         logic.safe_shutdown(config.DOOR_COUNT)
         set_light(False)
@@ -141,7 +148,12 @@ def reconnect_worker():
                 with state_lock:
                     state["status"] = "READY"
                     state["error_message"] = ""
+                    state["modbus_connected"] = True
+                    state["modbus_port"] = getattr(controller, "active_port", lambda: "simulator")()
                 log_event("connection recovered", "OK")
+            else:
+                with state_lock:
+                    state["modbus_connected"] = False
         except Exception:  # noqa: BLE001
             pass
 
@@ -243,6 +255,8 @@ def get_status():
             "doors": logic.get_states(),
             "light_relay_on": state["light_relay_on"],
             "test_mode": state["test_mode"],
+            "modbus_connected": state["modbus_connected"],
+            "modbus_port": state["modbus_port"],
         }
     )
 
@@ -253,10 +267,18 @@ def _shutdown():
         state["running"] = False
     watchdog.stop()
     logic.safe_shutdown(config.DOOR_COUNT)
-    set_light(False)
+    try:
+        set_light(False)
+    except Exception:
+        pass
     controller.close()
 
 
 if __name__ == "__main__":
-    log_event("system start", "OK")
+    if not config.SIMULATION_MODE and not connected:
+        state["status"] = "ERROR"
+        state["error_message"] = "modbus connect failed"
+        log_event("modbus connect failed", "ERROR")
+    else:
+        log_event("system start", "OK")
     app.run(host=config.HOST, port=config.PORT)
