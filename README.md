@@ -16,67 +16,133 @@ Door Test Controller — модульна система для Raspberry Pi д�
 - Retry для Modbus команд
 - Simulation mode без обладнання
 
-## Швидкий запуск на Raspberry Pi (без локальної мережі)
+## Діагностика та виправлення RS485 на Raspberry Pi
 
-> Мета: **Raspberry має побачити USB/RS-485 адаптер і відповіді VRC-R6 по Modbus RTU**.
-
-### 1) Підключення
-
-- Raspberry Pi ↔ USB-RS485 adapter
-- RS-485 adapter ↔ VRC-R6
-- Параметри Modbus:
-  - baudrate `9600`
-  - parity `N`
-  - stopbits `1`
-  - bytesize `8`
-  - slave id `1`
-
-### 2) Перевірити що Raspberry бачить RS-485 порт
+### 1. Перевірка системи
 
 ```bash
-ls /dev/ttyUSB* /dev/ttyACM* /dev/ttyAMA* /dev/ttyS* 2>/dev/null
+./tools/rs485_system_check.sh
 ```
 
-### 3) Запустити Modbus probe
+Скрипт виконує:
+- `lsusb`
+- `dmesg | grep -i usb`
+- `dmesg | grep tty`
+- перевірку `/dev/ttyUSB0`
+- список serial-портів.
+
+### 2. Драйвери USB-RS485
+
+Визначити чіп адаптера через:
 
 ```bash
-cd /home/pi/door-test-system
-python tools/rs485_probe.py --slave 0 --baudrate 9600 --retries 3
+lsusb
 ```
 
-Якщо `"ok": true` — зв'язок з VRC-R6 підтверджено.
+Якщо треба, встановити драйвери:
 
-### 4) Запуск сервісу локально на Raspberry
+```bash
+sudo apt update
+sudo apt install -y usb-modeswitch
+sudo modprobe usbserial
+sudo modprobe ftdi_sio
+sudo modprobe ch341
+sudo modprobe cp210x
+```
+
+### 3. Доступ до порту
+
+```bash
+sudo usermod -aG dialout pi
+sudo reboot
+```
+
+### 4. Низькорівневий тест порту (pyserial)
+
+```bash
+python tools/serial_port_test.py --port /dev/ttyUSB0
+```
+
+Це перевіряє, що порт відкривається без помилки.
+
+### 5. Modbus probe через pymodbus
+
+```bash
+python tools/rs485_probe.py --slave 1 --baudrate 9600 --port /dev/ttyUSB0
+```
+
+Або скан slave id 1..10:
+
+```bash
+python tools/rs485_probe.py --slave 0 --baudrate 9600 --port /dev/ttyUSB0 --retries 3
+```
+
+#### Що виправлено
+
+- probe більше не дає хибний `modbus_ok: false`, якщо пристрій відповів `Modbus exception code`
+- probe пробує кілька функцій читання
+- probe підтримує різницю між `pymodbus 2.x` і `3.x` (`unit=` vs `slave=`)
+- виводиться `pymodbus_version` для діагностики.
+
+### 6. MinimalModbus тест
+
+```bash
+python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1
+python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1 --write
+```
+
+Окремий тест корисний для перевірки читання/запису незалежно від `pymodbus`.
+
+### 7. Сумісність pymodbus 2.x / 3.x
+
+У проєкті виправлено несумісність API:
+- код більше не покладається жорстко лише на `slave=`
+- аргумент пристрою визначається автоматично через сигнатуру метода, тому однаково працює і з `unit=`, і зі `slave=`.
+
+### 8. Запуск локально на Raspberry
 
 ```bash
 cd /home/pi/door-test-system
 ./scripts/start_on_rpi.sh
 ```
 
-За замовчуванням Flask підіймається на `127.0.0.1:5000` (без LAN).
+Скрипт:
+- створює venv
+- ставить runtime-залежності
+- ставить `minimalmodbus`
+- запускає `rs485_probe.py`
+- запускає `serial_port_test.py`
+- стартує Flask локально.
 
-## API
+### 9. Фізична перевірка RS485
 
-- `GET /cycles` повертає:
-  - `cycles`: лічильники циклів
-  - `events`: журнал подій `open/close` з часом та дверима
+Перевірити:
+- A → A
+- B → B
+- GND підключено
+- baudrate = 9600
+- slave id = 1
+- автонапрямок адаптера
+- за потреби спробувати FTDI-адаптер.
 
-## Debug чекліст, якщо VRC-R6 не відповідає
+### 10. Якщо порт є, але відповіді нема
 
-1. Перевірити A/B лінії RS-485 (інколи треба поміняти місцями).
-2. Перевірити `slave id` на модулі.
-3. Перевірити живлення VRC-R6.
-4. Явно задати порт:
+Послідовність:
 
 ```bash
-MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 0 --baudrate 9600 --retries 3
+./tools/rs485_system_check.sh
+python tools/serial_port_test.py --port /dev/ttyUSB0
+python tools/rs485_probe.py --slave 0 --baudrate 9600 --port /dev/ttyUSB0 --retries 3
+python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1
 ```
 
-5. Перевірити логи:
+### 11. Логи
 
 ```bash
 tail -f logs/system.log
 ```
 
+## Важливо
 
-> Примітка: якщо модуль повертає Modbus exception code, це все одно вважається валідною відповіддю для перевірки лінку RS-485.
+- Не змішувати API `pymodbus 2.x` і `3.x` вручну — у проєкті це вже враховано автоматично.
+- Якщо адаптер відключити, `/dev/ttyUSB0` має зникати з системи — це окремий важливий тест Linux/USB.

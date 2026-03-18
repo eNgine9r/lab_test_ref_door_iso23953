@@ -1,3 +1,4 @@
+import inspect
 import os
 import threading
 from typing import List
@@ -44,6 +45,13 @@ class ModbusController:
             timeout=1,
         )
 
+    @staticmethod
+    def _device_arg(method) -> dict:
+        params = inspect.signature(method).parameters
+        if "unit" in params:
+            return {"unit": MODBUS_SLAVE_ID}
+        return {"slave": MODBUS_SLAVE_ID}
+
     def connect(self) -> bool:
         with self._lock:
             ports = [MODBUS_PORT]
@@ -88,7 +96,8 @@ class ModbusController:
 
     def write_coil(self, channel: int, value: bool) -> bool:
         with self._lock:
-            self._retry(lambda: self._client.write_coil(channel, value, slave=MODBUS_SLAVE_ID))
+            args = self._device_arg(self._client.write_coil)
+            self._retry(lambda: self._client.write_coil(channel, value, **args))
         return True
 
     def relay_on(self, channel: int) -> bool:
@@ -101,25 +110,22 @@ class ModbusController:
         for ch in range(channels):
             self.relay_off(ch)
 
-    def read_inputs(self, count: int = 8) -> List[bool]:
+    def read_inputs(self, count: int = 6) -> List[bool]:
         with self._lock:
-            rr = self._retry(lambda: self._client.read_coils(0, count, slave=MODBUS_SLAVE_ID))
+            args = self._device_arg(self._client.read_coils)
+            rr = self._retry(lambda: self._client.read_coils(0, count, **args))
         return list(rr.bits[:count])
 
     def ping(self) -> bool:
-        """Connectivity probe tolerant to Modbus exception responses.
-
-        Some devices answer with Modbus exception for unsupported function/address,
-        which still confirms bus connectivity.
-        """
+        """Connectivity probe tolerant to Modbus exception responses."""
         if not self._client:
             return False
 
         methods = [
-            lambda: self._client.read_coils(0, 1, slave=MODBUS_SLAVE_ID),
-            lambda: self._client.read_discrete_inputs(0, 1, slave=MODBUS_SLAVE_ID),
-            lambda: self._client.read_holding_registers(0, 1, slave=MODBUS_SLAVE_ID),
-            lambda: self._client.read_input_registers(0, 1, slave=MODBUS_SLAVE_ID),
+            lambda: self._client.read_coils(0, 1, **self._device_arg(self._client.read_coils)),
+            lambda: self._client.read_discrete_inputs(0, 1, **self._device_arg(self._client.read_discrete_inputs)),
+            lambda: self._client.read_holding_registers(0, 1, **self._device_arg(self._client.read_holding_registers)),
+            lambda: self._client.read_input_registers(0, 1, **self._device_arg(self._client.read_input_registers)),
         ]
         for method in methods:
             try:
