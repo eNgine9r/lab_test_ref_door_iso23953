@@ -4,145 +4,108 @@ Door Test Controller — модульна система для Raspberry Pi д�
 
 ## Актуальна апаратна ціль
 
-Проєкт тепер орієнтований **лише на VRC-R6** (6 реле, 6 входів). VRC-C4/VRC-R8 більше не використовуємо.
+Проєкт орієнтований **лише на VRC-R6** (6 реле, 6 входів).
 
-## Що вже готово
+## Аналіз вашого звіту тестування
 
-- Керування дверима (manual/automatic)
-- Лічильник циклів по дверях
-- Журнал подій циклів з timestamp для `door open/close`
-- Light relay control (auto OFF після 12 годин у `day` режимі)
-- Watchdog + fail-safe
-- Retry для Modbus команд
-- Simulation mode без обладнання
+З вашого звіту видно:
 
-## Діагностика та виправлення RS485 на Raspberry Pi
+- Raspberry Pi **бачить адаптер коректно**: `CP2104 USB to UART Bridge Controller` і `ttyUSB0` присутній. Це означає, що драйвер і USB-рівень працюють.
+- `pyserial` тест проходить: порт `/dev/ttyUSB0` відкривається без помилки. Це означає, що проблема **не в доступі до порту**.
+- `minimalmodbus` успішно читає та пише в `VRC-R6`. Отже, **RS485 фізика та сам Modbus канал реально працюють**.
+- Проблема була саме в реалізації через `pymodbus 3.12.1`: у вашому логові видно помилку `unexpected keyword argument 'slave'`. Це була реальна несумісність API `pymodbus 2.x / 3.x`, а не проблема кабелю чи модуля.
 
-### 1. Перевірка системи
+## Що виправлено
+
+### 1. Сумісність з `pymodbus 2.x / 3.x / 3.12+`
+
+Тепер код автоматично визначає, який ідентифікатор треба передавати в Modbus-виклики:
+- `device_id=`
+- `unit=`
+- `slave=`
+
+Тобто більше немає жорсткої прив’язки до одного API.
+
+### 2. Автоматичний fallback на `minimalmodbus`
+
+Оскільки ваш реальний тест показав, що `minimalmodbus` працює, я зробив так, щоб контролер міг працювати через два backend-и:
+- `pymodbus`
+- `minimalmodbus`
+
+А в режимі `MODBUS_BACKEND=auto` він:
+1. пробує `pymodbus`,
+2. якщо той не працює коректно — автоматично переключається на `minimalmodbus`.
+
+### 3. Виправлений `rs485_probe.py`
+
+`tools/rs485_probe.py` тепер:
+- підтримує новий API `pymodbus 3.12.1`,
+- якщо `pymodbus` не зміг, пробує `minimalmodbus`,
+- повертає не тільки `modbus_ok`, а й **через який backend** вдалося встановити зв’язок.
+
+### 4. Веб-інтерфейс показує активний Modbus backend
+
+У статусі тепер видно:
+- Modbus port
+- Modbus backend
+
+Тобто ви одразу побачите, через що саме система реально працює на Raspberry.
+
+## Що запускати зараз на Raspberry
+
+### Рекомендований запуск
+
+```bash
+cd ~/lab_test_ref_door_iso23953
+./scripts/start_on_rpi.sh
+```
+
+Стартовий скрипт тепер:
+- ставить залежності,
+- ставить `minimalmodbus`,
+- фіксує `MODBUS_PORT=/dev/ttyUSB0`, якщо порт існує,
+- запускає probe,
+- запускає low-level serial test,
+- стартує `app.py`.
+
+### Якщо хочете примусово запуск через `minimalmodbus`
+
+Оскільки саме він у вас вже підтверджено працює, для **найшвидшого стабільного запуску** рекомендую такий варіант:
+
+```bash
+cd ~/lab_test_ref_door_iso23953
+MODBUS_BACKEND=minimalmodbus MODBUS_PORT=/dev/ttyUSB0 ./scripts/start_on_rpi.sh
+```
+
+Це обійде проблемний шар `pymodbus`, якщо він знову поводитиметься нестабільно саме у вашому середовищі.
+
+## Діагностика, якщо ще буде проблема
+
+### Перевірка системи
 
 ```bash
 ./tools/rs485_system_check.sh
 ```
 
-Скрипт виконує:
-- `lsusb`
-- `dmesg | grep -i usb`
-- `dmesg | grep tty`
-- перевірку `/dev/ttyUSB0`
-- список serial-портів.
-
-### 2. Драйвери USB-RS485
-
-Визначити чіп адаптера через:
-
-```bash
-lsusb
-```
-
-Якщо треба, встановити драйвери:
-
-```bash
-sudo apt update
-sudo apt install -y usb-modeswitch
-sudo modprobe usbserial
-sudo modprobe ftdi_sio
-sudo modprobe ch341
-sudo modprobe cp210x
-```
-
-### 3. Доступ до порту
-
-```bash
-sudo usermod -aG dialout pi
-sudo reboot
-```
-
-### 4. Низькорівневий тест порту (pyserial)
+### Перевірка порту
 
 ```bash
 python tools/serial_port_test.py --port /dev/ttyUSB0
 ```
 
-Це перевіряє, що порт відкривається без помилки.
-
-### 5. Modbus probe через pymodbus
+### Перевірка probe
 
 ```bash
 python tools/rs485_probe.py --slave 1 --baudrate 9600 --port /dev/ttyUSB0
 ```
 
-Або скан slave id 1..10:
-
-```bash
-python tools/rs485_probe.py --slave 0 --baudrate 9600 --port /dev/ttyUSB0 --retries 3
-```
-
-#### Що виправлено
-
-- probe більше не дає хибний `modbus_ok: false`, якщо пристрій відповів `Modbus exception code`
-- probe пробує кілька функцій читання
-- probe підтримує різницю між `pymodbus 2.x` і `3.x` (`unit=` vs `slave=`)
-- виводиться `pymodbus_version` для діагностики.
-
-### 6. MinimalModbus тест
+### Перевірка через minimalmodbus
 
 ```bash
 python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1
 python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1 --write
 ```
 
-Окремий тест корисний для перевірки читання/запису незалежно від `pymodbus`.
+## Висновок по вашому звіту
 
-### 7. Сумісність pymodbus 2.x / 3.x
-
-У проєкті виправлено несумісність API:
-- код більше не покладається жорстко лише на `slave=`
-- аргумент пристрою визначається автоматично через сигнатуру метода, тому однаково працює і з `unit=`, і зі `slave=`.
-
-### 8. Запуск локально на Raspberry
-
-```bash
-cd /home/pi/door-test-system
-./scripts/start_on_rpi.sh
-```
-
-Скрипт:
-- створює venv
-- ставить runtime-залежності
-- ставить `minimalmodbus`
-- запускає `rs485_probe.py`
-- запускає `serial_port_test.py`
-- стартує Flask локально.
-
-### 9. Фізична перевірка RS485
-
-Перевірити:
-- A → A
-- B → B
-- GND підключено
-- baudrate = 9600
-- slave id = 1
-- автонапрямок адаптера
-- за потреби спробувати FTDI-адаптер.
-
-### 10. Якщо порт є, але відповіді нема
-
-Послідовність:
-
-```bash
-./tools/rs485_system_check.sh
-python tools/serial_port_test.py --port /dev/ttyUSB0
-python tools/rs485_probe.py --slave 0 --baudrate 9600 --port /dev/ttyUSB0 --retries 3
-python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1
-```
-
-### 11. Логи
-
-```bash
-tail -f logs/system.log
-```
-
-## Важливо
-
-- Не змішувати API `pymodbus 2.x` і `3.x` вручну — у проєкті це вже враховано автоматично.
-- Якщо адаптер відключити, `/dev/ttyUSB0` має зникати з системи — це окремий важливий тест Linux/USB.
+По факту, у вас **залізо вже працює**. Проблема була не в Raspberry, не в `/dev/ttyUSB0`, не в CP2104 і не в RS485 лінії. Проблема була в програмній несумісності `pymodbus` API у проєкті. Після цих змін проєкт повинен уже запускатися значно стабільніше, а в разі проблем з `pymodbus` — автоматично або вручну переходити на `minimalmodbus`, який у вас уже успішно пройшов read/write тест.

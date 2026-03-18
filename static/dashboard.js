@@ -51,6 +51,8 @@ async function refresh() {
   document.getElementById('event').textContent = status.last_event;
   document.getElementById('error').textContent = status.error_message || '-';
   document.getElementById('lightStatus').textContent = status.light_relay_on ? 'ON' : 'OFF';
+  document.getElementById('modbusPort').textContent = status.modbus_port || '-';
+  document.getElementById('modbusBackend').textContent = status.modbus_backend || '-';
   document.getElementById('cyclesData').textContent = JSON.stringify({ cycles: cycles.cycles, recent_events: (cycles.events || []).slice(-20) }, null, 2);
 
   const doorsEl = document.getElementById('doors');

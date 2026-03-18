@@ -55,7 +55,9 @@ state = {
     "light_channel": config.LIGHT_RELAY_CHANNEL,
     "modbus_connected": connected if not config.SIMULATION_MODE else True,
     "modbus_port": getattr(controller, "active_port", lambda: "simulator")(),
+    "modbus_backend": getattr(controller, "active_backend", lambda: "simulator")(),
 }
+
 
 
 
@@ -151,6 +153,7 @@ def reconnect_worker():
                     state["error_message"] = ""
                     state["modbus_connected"] = True
                     state["modbus_port"] = getattr(controller, "active_port", lambda: "simulator")()
+                    state["modbus_backend"] = getattr(controller, "active_backend", lambda: "simulator")()
                 log_event("connection recovered", "OK")
             else:
                 with state_lock:
@@ -260,6 +263,7 @@ def get_status():
             "door_count": state["door_count"],
             "modbus_connected": state["modbus_connected"],
             "modbus_port": state["modbus_port"],
+            "modbus_backend": state["modbus_backend"],
         }
     )
 
