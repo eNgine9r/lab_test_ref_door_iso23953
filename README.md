@@ -1,111 +1,128 @@
 # Door Test Controller
 
-Door Test Controller — модульна система для Raspberry Pi для ресурсних тестів дверей вітрин через Modbus RTU (RS‑485).
+Door Test Controller — Raspberry Pi система для ресурсних тестів дверей холодильних вітрин через VRC-R6 по RS-485 Modbus RTU.
 
-## Актуальна апаратна ціль
+## Що додано під ISO 23953-2
 
-Проєкт орієнтований **лише на VRC-R6** (6 реле, 6 входів).
+Додано окремий production-сценарій запуску за ТЗ:
 
-## Аналіз вашого звіту тестування
+- `main.py` — головна точка запуску тесту
+- `config.json` — конфігурація тесту
+- `modbus_client.py` — фабрика backend-контролера
+- `relay_controller.py` — API реле `open_relay/close_relay/close_all_relays`
+- `scheduler.py` — відкладений та scheduled старт
+- `test_logic.py` — логіка циклів ISO 23953-2
+- `logger.py` — логування в `logs/test.log`
 
-З вашого звіту видно:
+## Логіка тесту
 
-- Raspberry Pi **бачить адаптер коректно**: `CP2104 USB to UART Bridge Controller` і `ttyUSB0` присутній. Це означає, що драйвер і USB-рівень працюють.
-- `pyserial` тест проходить: порт `/dev/ttyUSB0` відкривається без помилки. Це означає, що проблема **не в доступі до порту**.
-- `minimalmodbus` успішно читає та пише в `VRC-R6`. Отже, **RS485 фізика та сам Modbus канал реально працюють**.
-- Проблема була саме в реалізації через `pymodbus 3.12.1`: у вашому логові видно помилку `unexpected keyword argument 'slave'`. Це була реальна несумісність API `pymodbus 2.x / 3.x`, а не проблема кабелю чи модуля.
+### 1. Startup / імітація завантаження
 
-## Що виправлено
+- Відкрити всі двері → 180 сек
+- Закрити всі двері → 300 сек
 
-### 1. Сумісність з `pymodbus 2.x / 3.x / 3.12+`
+### 2. Основний тест
 
-Тепер код автоматично визначає, який ідентифікатор треба передавати в Modbus-виклики:
-- `device_id=`
-- `unit=`
-- `slave=`
+Для `LT`:
+- `open_time = 6 sec`
+- `cycles_per_hour = 6`
 
-Тобто більше немає жорсткої прив’язки до одного API.
+Для `MT`:
+- `open_time = 15 sec`
+- `cycles_per_hour = 10`
 
-### 2. Автоматичний fallback на `minimalmodbus`
+Розрахунок:
 
-Оскільки ваш реальний тест показав, що `minimalmodbus` працює, я зробив так, щоб контролер міг працювати через два backend-и:
-- `pymodbus`
-- `minimalmodbus`
+- `interval = 3600 / cycles_per_hour`
+- `close_time = interval - open_time`
+- двері відкриваються **послідовно**, не одночасно
+- підтримується `1..5` дверей
 
-А в режимі `MODBUS_BACKEND=auto` він:
-1. пробує `pymodbus`,
-2. якщо той не працює коректно — автоматично переключається на `minimalmodbus`.
+### 3. Night mode
 
-### 3. Виправлений `rs485_probe.py`
+- реле 6 (`Light`) вимикається
+- усі двері закриті
+- нові відкриття не виконуються
 
-`tools/rs485_probe.py` тепер:
-- підтримує новий API `pymodbus 3.12.1`,
-- якщо `pymodbus` не зміг, пробує `minimalmodbus`,
-- повертає не тільки `modbus_ok`, а й **через який backend** вдалося встановити зв’язок.
+### 4. Debug mode
 
-### 4. Веб-інтерфейс показує активний Modbus backend
+Якщо `debug=true`, усі таймінги діляться на 10.
 
-У статусі тепер видно:
-- Modbus port
-- Modbus backend
+## Mapping реле VRC-R6
 
-Тобто ви одразу побачите, через що саме система реально працює на Raspberry.
+- Relay 1 → Door 1
+- Relay 2 → Door 2
+- Relay 3 → Door 3
+- Relay 4 → Door 4
+- Relay 5 → Door 5
+- Relay 6 → Light
 
-## Що запускати зараз на Raspberry
+## Конфігурація `config.json`
 
-### Рекомендований запуск
+```json
+{
+  "mode": "LT",
+  "doors": 3,
+  "test_duration_hours": 12,
+  "start_delay_sec": 0,
+  "debug": false,
+  "schedule": {
+    "enabled": false,
+    "start_time": "22:00"
+  },
+  "modbus": {
+    "port": "/dev/ttyUSB0",
+    "baudrate": 9600,
+    "slave_id": 1,
+    "backend": "auto"
+  }
+}
+```
+
+## Як запускати
+
+### Ручний запуск
 
 ```bash
-cd ~/lab_test_ref_door_iso23953
+python main.py
+```
+
+### Запуск з перевизначенням параметрів
+
+```bash
+python main.py --mode LT --doors 2
+python main.py --mode MT --doors 5 --debug
+```
+
+### Запуск через вже підготовлений Raspberry сценарій
+
+```bash
 ./scripts/start_on_rpi.sh
 ```
 
-Стартовий скрипт тепер:
-- ставить залежності,
-- ставить `minimalmodbus`,
-- фіксує `MODBUS_PORT=/dev/ttyUSB0`, якщо порт існує,
-- запускає probe,
-- запускає low-level serial test,
-- стартує `app.py`.
-
-### Якщо хочете примусово запуск через `minimalmodbus`
-
-Оскільки саме він у вас вже підтверджено працює, для **найшвидшого стабільного запуску** рекомендую такий варіант:
+### Якщо хочете примусово використовувати stable backend, який уже показав успішні read/write на Raspberry
 
 ```bash
-cd ~/lab_test_ref_door_iso23953
-MODBUS_BACKEND=minimalmodbus MODBUS_PORT=/dev/ttyUSB0 ./scripts/start_on_rpi.sh
+MODBUS_BACKEND=minimalmodbus MODBUS_PORT=/dev/ttyUSB0 python main.py
 ```
 
-Це обійде проблемний шар `pymodbus`, якщо він знову поводитиметься нестабільно саме у вашому середовищі.
+## Логування
 
-## Діагностика, якщо ще буде проблема
-
-### Перевірка системи
+Основний runtime-лог тесту:
 
 ```bash
-./tools/rs485_system_check.sh
+logs/test.log
 ```
 
-### Перевірка порту
+Логується:
+- старт/стоп тесту
+- відкриття/закриття дверей
+- стани реле
+- помилки Modbus
+- перепідключення
 
-```bash
-python tools/serial_port_test.py --port /dev/ttyUSB0
-```
+## Важливо
 
-### Перевірка probe
-
-```bash
-python tools/rs485_probe.py --slave 1 --baudrate 9600 --port /dev/ttyUSB0
-```
-
-### Перевірка через minimalmodbus
-
-```bash
-python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1
-python tools/minimalmodbus_test.py --port /dev/ttyUSB0 --slave 1 --write
-```
-
-## Висновок по вашому звіту
-
-По факту, у вас **залізо вже працює**. Проблема була не в Raspberry, не в `/dev/ttyUSB0`, не в CP2104 і не в RS485 лінії. Проблема була в програмній несумісності `pymodbus` API у проєкті. Після цих змін проєкт повинен уже запускатися значно стабільніше, а в разі проблем з `pymodbus` — автоматично або вручну переходити на `minimalmodbus`, який у вас уже успішно пройшов read/write тест.
+- Для фактичного ISO-тесту використовуйте `main.py`, а не старий demo/web flow.
+- Web UI залишено для сервісного контролю, але основний алгоритм циклів тепер винесений в окрему архітектуру за ТЗ.
+- Якщо `pymodbus` нестабільний у вашому середовищі, використовуйте `MODBUS_BACKEND=minimalmodbus`.
