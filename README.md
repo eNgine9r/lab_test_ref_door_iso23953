@@ -41,7 +41,7 @@ ls /dev/ttyUSB* /dev/ttyACM* /dev/ttyAMA* /dev/ttyS* 2>/dev/null
 
 ```bash
 cd /home/pi/door-test-system
-python tools/rs485_probe.py --slave 1 --baudrate 9600
+python tools/rs485_probe.py --slave 0 --baudrate 9600 --retries 3
 ```
 
 Якщо `"ok": true` — зв'язок з VRC-R6 підтверджено.
@@ -69,7 +69,7 @@ cd /home/pi/door-test-system
 4. Явно задати порт:
 
 ```bash
-MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 1 --baudrate 9600
+MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 0 --baudrate 9600 --retries 3
 ```
 
 5. Перевірити логи:
@@ -77,3 +77,6 @@ MODBUS_PORT=/dev/ttyUSB0 python tools/rs485_probe.py --slave 1 --baudrate 9600
 ```bash
 tail -f logs/system.log
 ```
+
+
+> Примітка: якщо модуль повертає Modbus exception code, це все одно вважається валідною відповіддю для перевірки лінку RS-485.

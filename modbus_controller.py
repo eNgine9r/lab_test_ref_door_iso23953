@@ -107,5 +107,29 @@ class ModbusController:
         return list(rr.bits[:count])
 
     def ping(self) -> bool:
-        self.read_inputs(1)
-        return True
+        """Connectivity probe tolerant to Modbus exception responses.
+
+        Some devices answer with Modbus exception for unsupported function/address,
+        which still confirms bus connectivity.
+        """
+        if not self._client:
+            return False
+
+        methods = [
+            lambda: self._client.read_coils(0, 1, slave=MODBUS_SLAVE_ID),
+            lambda: self._client.read_discrete_inputs(0, 1, slave=MODBUS_SLAVE_ID),
+            lambda: self._client.read_holding_registers(0, 1, slave=MODBUS_SLAVE_ID),
+            lambda: self._client.read_input_registers(0, 1, slave=MODBUS_SLAVE_ID),
+        ]
+        for method in methods:
+            try:
+                resp = method()
+                if resp is None:
+                    continue
+                if hasattr(resp, "isError") and not resp.isError():
+                    return True
+                if getattr(resp, "exception_code", None) is not None:
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
