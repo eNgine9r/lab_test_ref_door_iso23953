@@ -8,78 +8,84 @@
 </head>
 <body>
   <main class="container">
-    <section class="panel header">
-      <h1 data-i18n="title">Door Test Controller</h1>
-      <div class="right">
-        <label data-i18n="lang">Language
-          <select id="langSelect">
-            <option value="uk">Українська</option>
-            <option value="en">English</option>
-          </select>
-        </label>
+    <section class="panel hero">
+      <div>
+        <p class="eyebrow">ISO 23953-2</p>
+        <h1 data-i18n="title">Door Test Controller</h1>
+        <p class="subtitle" data-i18n="subtitle">Запустіть сервер і натисніть одну кнопку нижче, щоб почати автоматичний тест дверей.</p>
+      </div>
+      <div class="hero-status">
+        <div class="status-pill" id="statusPill">READY</div>
+        <p><strong data-i18n="event">Last event:</strong> <span id="event">-</span></p>
+        <p><strong data-i18n="error">Error:</strong> <span id="error">-</span></p>
       </div>
     </section>
 
     <section class="panel grid two">
       <div>
-        <h2 data-i18n="params">Параметри</h2>
-        <label data-i18n="showcase">Тип вітрини
-          <select id="showcase_type">
-            <option value="medium temperature">MT</option>
-            <option value="low temperature">LT</option>
+        <h2 data-i18n="quick_start">Швидкий запуск</h2>
+        <p class="hint" data-i18n="quick_help">Оберіть режим тесту, кількість дверей і натисніть «Старт». Інші параметри вже підставляються автоматично.</p>
+        <label data-i18n="mode">Режим тесту
+          <select id="mode">
+            <option value="MT">MT — Medium Temperature</option>
+            <option value="LT">LT — Low Temperature</option>
           </select>
         </label>
         <label data-i18n="door_count">Кількість дверей
-          <input id="door_count" type="number" min="1" max="6" value="4">
+          <input id="door_count" type="number" min="1" max="5" value="4">
         </label>
-        <label data-i18n="open_time">Open time (s)
-          <input id="open_time" type="number" step="0.1" value="2">
+        <label data-i18n="duration">Тривалість тесту (год)
+          <input id="test_duration_hours" type="number" min="1" max="168" value="12">
         </label>
-        <label data-i18n="delay">Delay (s)
-          <input id="delay_between_doors" type="number" step="0.1" value="1">
+        <label class="checkbox-row">
+          <input id="debug" type="checkbox">
+          <span data-i18n="debug">Debug режим (час у 10 разів швидше)</span>
         </label>
-        <label data-i18n="mode">Режим тесту
-          <select id="test_mode">
-            <option value="day" data-i18n="day">Day</option>
-            <option value="night" data-i18n="night">Night</option>
-          </select>
-        </label>
+        <div class="primary-actions">
+          <button id="start" class="primary" data-i18n="start">Старт</button>
+          <button id="stop" class="secondary" data-i18n="stop">Стоп</button>
+        </div>
       </div>
 
       <div>
-        <h2 data-i18n="status">Статус</h2>
+        <h2 data-i18n="status">Статус системи</h2>
         <p><strong data-i18n="system_status">System status:</strong> <span id="status">-</span></p>
         <p><strong data-i18n="test">Test:</strong> <span id="running">-</span></p>
-        <p><strong data-i18n="event">Last event:</strong> <span id="event">-</span></p>
-        <p><strong data-i18n="error">Error:</strong> <span id="error">-</span></p>
+        <p><strong>Mode:</strong> <span id="activeMode">-</span></p>
+        <p><strong>Door count:</strong> <span id="activeDoorCount">-</span></p>
+        <p><strong>Duration:</strong> <span id="activeDuration">-</span></p>
+        <p><strong>Debug:</strong> <span id="activeDebug">-</span></p>
         <p><strong data-i18n="light">Light relay:</strong> <span id="lightStatus">-</span></p>
         <p><strong>Modbus port:</strong> <span id="modbusPort">-</span></p>
         <p><strong>Modbus backend:</strong> <span id="modbusBackend">-</span></p>
       </div>
     </section>
 
-    <section class="panel buttons">
-      <button id="start" data-i18n="start">Start test</button>
-      <button id="stop" data-i18n="stop">Stop test</button>
-      <button id="reset" data-i18n="reset">Reset cycles</button>
-      <button id="lightOn" data-i18n="light_on">Light ON</button>
-      <button id="lightOff" data-i18n="light_off">Light OFF</button>
-      <button data-door="1">Open door 1</button>
-      <button data-door="2">Open door 2</button>
-      <button data-door="3">Open door 3</button>
-      <button data-door="4">Open door 4</button>
-      <button data-door="5">Open door 5</button>
-      <button data-door="6">Open door 6</button>
-    </section>
-
     <section class="panel">
-      <h2 data-i18n="doors">Door states</h2>
+      <h2 data-i18n="doors">Стан дверей</h2>
       <div id="doors" class="door-grid"></div>
     </section>
 
-    <section class="panel">
-      <h2 data-i18n="cycles">Cycles</h2>
-      <pre id="cyclesData">-</pre>
+    <section class="panel grid two">
+      <div>
+        <h2 data-i18n="manual_controls">Ручне керування</h2>
+        <p class="hint" data-i18n="manual_help">Сервісні кнопки для перевірки конкретних дверей або світла.</p>
+        <div class="buttons">
+          <button id="lightOn" class="secondary" data-i18n="light_on">Light ON</button>
+          <button id="lightOff" class="secondary" data-i18n="light_off">Light OFF</button>
+          <button id="reset" class="secondary" data-i18n="reset">Reset cycles</button>
+          <button data-door="1" class="secondary">Open door 1</button>
+          <button data-door="2" class="secondary">Open door 2</button>
+          <button data-door="3" class="secondary">Open door 3</button>
+          <button data-door="4" class="secondary">Open door 4</button>
+          <button data-door="5" class="secondary">Open door 5</button>
+        </div>
+      </div>
+
+      <div>
+        <h2 data-i18n="cycles">Cycles</h2>
+        <pre id="cyclesData">-</pre>
+      </div>
     </section>
   </main>
 

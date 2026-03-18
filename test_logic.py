@@ -1,4 +1,5 @@
 import signal
+import threading
 import time
 
 
@@ -8,28 +9,43 @@ class ISO23953DoorTest:
         'MT': {'open_time': 15, 'cycles_per_hour': 10},
     }
 
-    def __init__(self, config: dict, relay_controller, logger):
+    def __init__(self, config: dict, relay_controller, logger, register_signals: bool = True):
         self.config = config
         self.relay = relay_controller
         self.logger = logger
         self.running = True
-        signal.signal(signal.SIGINT, self._handle_interrupt)
-        signal.signal(signal.SIGTERM, self._handle_interrupt)
+        self.stopped_early = False
+        self._register_signals = register_signals and threading.current_thread() is threading.main_thread()
+        if self._register_signals:
+            signal.signal(signal.SIGINT, self._handle_interrupt)
+            signal.signal(signal.SIGTERM, self._handle_interrupt)
 
     def _handle_interrupt(self, signum, _frame):
-        self.logger.warning('received signal %s, emergency stop', signum)
+        self.stop(f'received signal {signum}, emergency stop')
+
+    def stop(self, reason: str = 'stop requested'):
+        self.logger.warning(reason)
         self.running = False
+        self.stopped_early = True
         self.relay.close_all_relays()
 
     def _scale(self, seconds: float) -> float:
         return seconds / 10 if self.config.get('debug') else seconds
+
+    def _sleep_with_checks(self, seconds: float, step: float = 0.2):
+        remaining = max(0.0, float(seconds))
+        while self.running and remaining > 0:
+            pause = min(step, remaining)
+            time.sleep(pause)
+            remaining -= pause
+        return self.running
 
     def _with_reconnect(self, fn, description: str):
         try:
             return fn()
         except Exception as exc:  # noqa: BLE001
             self.logger.error('%s failed: %s', description, exc)
-            time.sleep(5)
+            time.sleep(1)
             if self.relay.reconnect():
                 self.logger.info('reconnected after failure: %s', description)
                 return fn()
@@ -39,11 +55,16 @@ class ISO23953DoorTest:
     def startup_phase(self, doors: int):
         self.logger.info('startup phase begin')
         for door in range(1, doors + 1):
+            if not self.running:
+                return
             self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door} in startup')
-        time.sleep(self._scale(180))
+        if not self._sleep_with_checks(self._scale(180)):
+            return
         for door in range(1, doors + 1):
+            if not self.running:
+                return
             self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door} in startup')
-        time.sleep(self._scale(300))
+        self._sleep_with_checks(self._scale(300))
         self.logger.info('startup phase end')
 
     def main_test(self, doors: int, hours: int, mode: str):
@@ -80,10 +101,14 @@ class ISO23953DoorTest:
                         break
                     self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door}')
                     self.logger.info('door %s opened', door)
-                    time.sleep(open_time)
+                    if not self._sleep_with_checks(open_time):
+                        break
                     self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door}')
                     self.logger.info('door %s closed', door)
-                    time.sleep(inter_door_delay)
+                    if not self._sleep_with_checks(inter_door_delay):
+                        break
+                    if hasattr(self.relay, 'record_cycle'):
+                        self.relay.record_cycle(door)
 
         self.logger.info('main test end')
 

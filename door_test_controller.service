@@ -1,12 +1,15 @@
 [Unit]
-Description=Door Test Controller ISO23953 Runner
+Description=Door Test Controller Web UI
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/door-test-system
 Environment=SIMULATION_MODE=0
+Environment=HOST=127.0.0.1
+Environment=PORT=5000
 Environment=MODBUS_BACKEND=auto
+Environment=AUTO_OPEN_BROWSER=1
 ExecStart=/home/pi/door-test-system/scripts/start_on_rpi.sh
 Restart=always
 RestartSec=3
