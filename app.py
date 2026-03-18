@@ -20,6 +20,7 @@ from test_logic import ISO23953DoorTest
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = APP_DIR / "config.json"
+DATETIME_FORMAT = "%Y-%m-%dT%H:%M"
 
 app = Flask(__name__)
 
@@ -36,6 +37,18 @@ def load_runtime_config() -> dict:
         with DEFAULT_CONFIG_PATH.open(encoding="utf-8") as fh:
             return json.load(fh)
     return {}
+
+
+def current_form_state() -> dict:
+    with state_lock:
+        return {
+            "mode": state["selected_mode"],
+            "door_count": state["selected_door_count"],
+            "test_duration_hours": state["selected_test_duration_hours"],
+            "debug": state["selected_debug"],
+            "schedule_enabled": state["schedule_enabled"],
+            "scheduled_start": state["scheduled_start"],
+        }
 
 
 runtime_config = load_runtime_config()
@@ -69,6 +82,14 @@ state_lock = threading.Lock()
 test_lock = threading.Lock()
 current_test = None
 current_thread = None
+scheduler_thread = None
+scheduler_cancel = threading.Event()
+default_mode = str(runtime_config.get("mode", "MT")).upper()
+default_doors = max(1, min(int(runtime_config.get("doors", config.DOOR_COUNT)), 5))
+default_duration = int(runtime_config.get("test_duration_hours", 12))
+default_debug = bool(runtime_config.get("debug", False))
+default_scheduled_start = runtime_config.get("scheduled_start", "")
+default_schedule_enabled = bool(default_scheduled_start)
 state = {
     "running": False,
     "status": "READY" if connected or simulation_mode else "ERROR",
@@ -76,18 +97,25 @@ state = {
     "error_message": "" if connected or simulation_mode else "modbus connect failed",
     "open_time": runtime_config.get("open_time", config.DEFAULT_OPEN_TIME),
     "delay_between_doors": runtime_config.get("delay_between_doors", config.DEFAULT_DELAY),
-    "showcase_type": runtime_config.get("mode", "MT"),
-    "door_count": max(1, min(int(runtime_config.get("doors", config.DOOR_COUNT)), 5)),
+    "showcase_type": default_mode,
+    "door_count": default_doors,
     "started_at": None,
-    "test_mode": runtime_config.get("mode", "MT"),
+    "test_mode": default_mode,
     "light_relay_on": False,
     "light_channel": RelayController.LIGHT_CHANNEL,
     "light_off_after_seconds": 12 * 3600,
     "modbus_connected": connected if not simulation_mode else True,
     "modbus_port": getattr(controller, "active_port", lambda: "simulator")(),
     "modbus_backend": getattr(controller, "active_backend", lambda: "simulator")(),
-    "test_duration_hours": int(runtime_config.get("test_duration_hours", 12)),
-    "debug": bool(runtime_config.get("debug", False)),
+    "test_duration_hours": default_duration,
+    "debug": default_debug,
+    "selected_mode": default_mode,
+    "selected_door_count": default_doors,
+    "selected_test_duration_hours": default_duration,
+    "selected_debug": default_debug,
+    "schedule_enabled": default_schedule_enabled,
+    "scheduled_start": default_scheduled_start,
+    "schedule_status": "IDLE",
 }
 
 
@@ -124,12 +152,24 @@ class ObservableRelayController(RelayController):
 web_relay = ObservableRelayController(controller, relay_logger)
 
 
+def parse_schedule_datetime(raw_value: str) -> str:
+    if not raw_value:
+        return ""
+    scheduled = datetime.strptime(raw_value, DATETIME_FORMAT)
+    if scheduled <= datetime.now():
+        raise ValueError("Scheduled start must be in the future")
+    return scheduled.strftime(DATETIME_FORMAT)
+
+
+
 def build_test_config(payload: dict) -> dict:
-    mode = str(payload.get("mode", state["test_mode"]))
+    mode = str(payload.get("mode", current_form_state()["mode"]))
     mode = mode.upper() if mode else "MT"
-    doors = max(1, min(int(payload.get("door_count", state["door_count"])), 5))
-    duration = max(1, int(payload.get("test_duration_hours", state["test_duration_hours"])))
-    debug = bool(payload.get("debug", state["debug"]))
+    doors = max(1, min(int(payload.get("door_count", current_form_state()["door_count"])), 5))
+    duration = max(1, int(payload.get("test_duration_hours", current_form_state()["test_duration_hours"])))
+    debug = bool(payload.get("debug", current_form_state()["debug"]))
+    schedule_enabled = bool(payload.get("schedule_enabled", False))
+    scheduled_start = parse_schedule_datetime(payload.get("scheduled_start", "")) if schedule_enabled else ""
     config_data = dict(runtime_config)
     config_data.update(
         {
@@ -137,9 +177,41 @@ def build_test_config(payload: dict) -> dict:
             "doors": doors,
             "test_duration_hours": duration,
             "debug": debug,
+            "schedule": {
+                "enabled": schedule_enabled,
+                "start_time": scheduled_start,
+            },
+            "scheduled_start": scheduled_start,
         }
     )
     return config_data
+
+
+
+def apply_selected_state(test_config: dict):
+    with state_lock:
+        state["selected_mode"] = test_config["mode"]
+        state["selected_door_count"] = test_config["doors"]
+        state["selected_test_duration_hours"] = test_config["test_duration_hours"]
+        state["selected_debug"] = test_config["debug"]
+        state["schedule_enabled"] = bool(test_config.get("schedule", {}).get("enabled", False))
+        state["scheduled_start"] = test_config.get("scheduled_start", "")
+
+
+
+def mark_test_active(test_config: dict):
+    with state_lock:
+        state["running"] = True
+        state["status"] = "RUNNING"
+        state["error_message"] = ""
+        state["started_at"] = datetime.now().isoformat()
+        state["door_count"] = test_config["doors"]
+        state["test_mode"] = test_config["mode"]
+        state["showcase_type"] = test_config["mode"]
+        state["test_duration_hours"] = test_config["test_duration_hours"]
+        state["debug"] = test_config["debug"]
+        state["schedule_status"] = "IDLE"
+        state["scheduled_start"] = test_config.get("scheduled_start", "")
 
 
 
@@ -151,7 +223,13 @@ def run_iso_test(test_config: dict):
         current_thread = threading.current_thread()
 
     try:
-        relay_logger.info("web ui started test mode=%s doors=%s duration=%s debug=%s", test_config["mode"], test_config["doors"], test_config["test_duration_hours"], test_config.get("debug", False))
+        relay_logger.info(
+            "web ui started test mode=%s doors=%s duration=%s debug=%s",
+            test_config["mode"],
+            test_config["doors"],
+            test_config["test_duration_hours"],
+            test_config.get("debug", False),
+        )
         test.run()
         if test.stopped_early:
             with state_lock:
@@ -174,9 +252,59 @@ def run_iso_test(test_config: dict):
             state["modbus_connected"] = True if simulation_mode else controller.ping()
             state["modbus_port"] = getattr(controller, "active_port", lambda: "simulator")()
             state["modbus_backend"] = getattr(controller, "active_backend", lambda: "simulator")()
+            if state["schedule_status"] != "WAITING":
+                state["scheduled_start"] = ""
+                state["schedule_enabled"] = False
+                state["schedule_status"] = "IDLE"
         with test_lock:
             current_test = None
             current_thread = None
+
+
+
+def launch_test(test_config: dict):
+    apply_selected_state(test_config)
+    mark_test_active(test_config)
+    thread = threading.Thread(target=run_iso_test, args=(test_config,), daemon=True)
+    thread.start()
+    log_event(f"test start ({test_config['mode']})", "OK")
+    return thread
+
+
+
+def schedule_test_run(test_config: dict):
+    global scheduler_thread
+    scheduled_raw = test_config.get("scheduled_start", "")
+    scheduled_at = datetime.strptime(scheduled_raw, DATETIME_FORMAT)
+
+    def worker():
+        with state_lock:
+            state["schedule_status"] = "WAITING"
+            state["status"] = "SCHEDULED"
+            state["running"] = False
+            state["scheduled_start"] = scheduled_raw
+        log_event(f"test scheduled for {scheduled_raw}", "OK")
+
+        while not scheduler_cancel.is_set():
+            seconds_left = (scheduled_at - datetime.now()).total_seconds()
+            if seconds_left <= 0:
+                break
+            time.sleep(min(1, max(0.1, seconds_left)))
+
+        if scheduler_cancel.is_set():
+            with state_lock:
+                state["status"] = "STOPPED"
+                state["schedule_status"] = "IDLE"
+                state["scheduled_start"] = ""
+                state["schedule_enabled"] = False
+                state["last_event"] = "scheduled test cancelled"
+            return
+
+        launch_test({**test_config, "schedule": {"enabled": False, "start_time": ""}, "scheduled_start": ""})
+
+    scheduler_cancel.clear()
+    scheduler_thread = threading.Thread(target=worker, daemon=True)
+    scheduler_thread.start()
 
 
 @app.route("/")
@@ -191,31 +319,28 @@ def dashboard():
 
 @app.route("/start", methods=["POST"])
 def start_test():
+    global scheduler_thread
     payload = request.get_json(silent=True) or {}
     with state_lock:
-        if state["running"]:
-            return jsonify({"message": "Test already running"}), 200
-        state["running"] = True
-        state["status"] = "RUNNING"
-        state["error_message"] = ""
-        state["started_at"] = datetime.now().isoformat()
+        if state["running"] or state["schedule_status"] == "WAITING":
+            return jsonify({"message": "Test already running or scheduled"}), 200
 
     test_config = build_test_config(payload)
-    with state_lock:
-        state["door_count"] = test_config["doors"]
-        state["test_mode"] = test_config["mode"]
-        state["showcase_type"] = test_config["mode"]
-        state["test_duration_hours"] = test_config["test_duration_hours"]
-        state["debug"] = test_config["debug"]
+    apply_selected_state(test_config)
 
-    thread = threading.Thread(target=run_iso_test, args=(test_config,), daemon=True)
-    thread.start()
-    log_event(f"test start ({test_config['mode']})", "OK")
+    if test_config.get("schedule", {}).get("enabled"):
+        schedule_test_run(test_config)
+        return jsonify({"message": "scheduled", "config": test_config})
+
+    scheduler_cancel.clear()
+    scheduler_thread = None
+    launch_test(test_config)
     return jsonify({"message": "started", "config": test_config})
 
 
 @app.route("/stop", methods=["POST"])
 def stop_test():
+    scheduler_cancel.set()
     with test_lock:
         test = current_test
     if test is not None:
@@ -223,6 +348,9 @@ def stop_test():
     with state_lock:
         state["running"] = False
         state["status"] = "STOPPED"
+        state["schedule_status"] = "IDLE"
+        state["scheduled_start"] = ""
+        state["schedule_enabled"] = False
         state["last_event"] = "test stop requested"
     return jsonify({"message": "stop requested"})
 
@@ -237,7 +365,7 @@ def reset_cycles():
 @app.route("/open/<int:door>", methods=["POST"])
 def manual_open(door: int):
     with state_lock:
-        allowed_doors = state["door_count"]
+        allowed_doors = state["selected_door_count"]
     if not 1 <= door <= allowed_doors:
         return jsonify({"error": "invalid door"}), 400
     try:
@@ -271,6 +399,13 @@ def get_cycles():
 @app.route("/status")
 def get_status():
     with state_lock:
+        seconds_until_start = None
+        if state["scheduled_start"]:
+            try:
+                target = datetime.strptime(state["scheduled_start"], DATETIME_FORMAT)
+                seconds_until_start = max(0, int((target - datetime.now()).total_seconds()))
+            except ValueError:
+                seconds_until_start = None
         return jsonify(
             {
                 "system_status": state["status"],
@@ -286,12 +421,21 @@ def get_status():
                 "modbus_backend": state["modbus_backend"],
                 "test_duration_hours": state["test_duration_hours"],
                 "debug": state["debug"],
+                "selected_mode": state["selected_mode"],
+                "selected_door_count": state["selected_door_count"],
+                "selected_test_duration_hours": state["selected_test_duration_hours"],
+                "selected_debug": state["selected_debug"],
+                "schedule_enabled": state["schedule_enabled"],
+                "scheduled_start": state["scheduled_start"],
+                "schedule_status": state["schedule_status"],
+                "seconds_until_start": seconds_until_start,
             }
         )
 
 
 @atexit.register
 def _shutdown():
+    scheduler_cancel.set()
     with test_lock:
         test = current_test
     if test is not None:

@@ -8,6 +8,8 @@ class ISO23953DoorTest:
         'LT': {'open_time': 6, 'cycles_per_hour': 6},
         'MT': {'open_time': 15, 'cycles_per_hour': 10},
     }
+    STARTUP_OPEN_SECONDS = 180
+    STARTUP_STABILIZE_SECONDS = 300
 
     def __init__(self, config: dict, relay_controller, logger, register_signals: bool = True):
         self.config = config
@@ -58,13 +60,14 @@ class ISO23953DoorTest:
             if not self.running:
                 return
             self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door} in startup')
-        if not self._sleep_with_checks(self._scale(180)):
-            return
-        for door in range(1, doors + 1):
-            if not self.running:
+            self.logger.info('startup door %s opened for load phase', door)
+            if not self._sleep_with_checks(self._scale(self.STARTUP_OPEN_SECONDS)):
                 return
             self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door} in startup')
-        self._sleep_with_checks(self._scale(300))
+            self.logger.info('startup door %s closed after load phase', door)
+        if self.running:
+            self.logger.info('startup stabilization begin')
+            self._sleep_with_checks(self._scale(self.STARTUP_STABILIZE_SECONDS))
         self.logger.info('startup phase end')
 
     def main_test(self, doors: int, hours: int, mode: str):
@@ -105,10 +108,10 @@ class ISO23953DoorTest:
                         break
                     self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door}')
                     self.logger.info('door %s closed', door)
-                    if not self._sleep_with_checks(inter_door_delay):
-                        break
                     if hasattr(self.relay, 'record_cycle'):
                         self.relay.record_cycle(door)
+                    if not self._sleep_with_checks(inter_door_delay):
+                        break
 
         self.logger.info('main test end')
 

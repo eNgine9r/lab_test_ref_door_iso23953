@@ -18,6 +18,7 @@
         <div class="status-pill" id="statusPill">READY</div>
         <p><strong data-i18n="event">Last event:</strong> <span id="event">-</span></p>
         <p><strong data-i18n="error">Error:</strong> <span id="error">-</span></p>
+        <p><strong data-i18n="timer">Timer:</strong> <span id="scheduleCountdown">-</span></p>
       </div>
     </section>
 
@@ -32,7 +33,13 @@
           </select>
         </label>
         <label data-i18n="door_count">Кількість дверей
-          <input id="door_count" type="number" min="1" max="5" value="4">
+          <select id="door_count">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
         </label>
         <label data-i18n="duration">Тривалість тесту (год)
           <input id="test_duration_hours" type="number" min="1" max="168" value="12">
@@ -40,6 +47,13 @@
         <label class="checkbox-row">
           <input id="debug" type="checkbox">
           <span data-i18n="debug">Debug режим (час у 10 разів швидше)</span>
+        </label>
+        <label class="checkbox-row">
+          <input id="schedule_enabled" type="checkbox">
+          <span data-i18n="schedule_enable">Запланувати запуск</span>
+        </label>
+        <label data-i18n="schedule_start">Дата і час старту
+          <input id="scheduled_start" type="datetime-local">
         </label>
         <div class="primary-actions">
           <button id="start" class="primary" data-i18n="start">Старт</button>
@@ -55,6 +69,7 @@
         <p><strong>Door count:</strong> <span id="activeDoorCount">-</span></p>
         <p><strong>Duration:</strong> <span id="activeDuration">-</span></p>
         <p><strong>Debug:</strong> <span id="activeDebug">-</span></p>
+        <p><strong data-i18n="schedule_state">Schedule:</strong> <span id="scheduleState">-</span></p>
         <p><strong data-i18n="light">Light relay:</strong> <span id="lightStatus">-</span></p>
         <p><strong>Modbus port:</strong> <span id="modbusPort">-</span></p>
         <p><strong>Modbus backend:</strong> <span id="modbusBackend">-</span></p>
@@ -84,7 +99,9 @@
 
       <div>
         <h2 data-i18n="cycles">Cycles</h2>
-        <pre id="cyclesData">-</pre>
+        <div class="cycles-panel">
+          <pre id="cyclesData">-</pre>
+        </div>
       </div>
     </section>
   </main>

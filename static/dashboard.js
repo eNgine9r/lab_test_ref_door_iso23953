@@ -4,12 +4,16 @@ const i18n = {
     subtitle: 'Запустіть сервер і натисніть одну кнопку нижче, щоб почати автоматичний тест дверей.',
     event: 'Last event:',
     error: 'Error:',
+    timer: 'Таймер:',
     quick_start: 'Швидкий запуск',
     quick_help: 'Оберіть режим тесту, кількість дверей і натисніть «Старт». Інші параметри вже підставляються автоматично.',
     mode: 'Режим тесту',
     door_count: 'Кількість дверей',
     duration: 'Тривалість тесту (год)',
     debug: 'Debug режим (час у 10 разів швидше)',
+    schedule_enable: 'Запланувати запуск',
+    schedule_start: 'Дата і час старту',
+    schedule_state: 'Schedule:',
     start: 'Старт',
     stop: 'Стоп',
     status: 'Статус системи',
@@ -29,12 +33,16 @@ const i18n = {
     subtitle: 'Start the server and press one button below to begin the automatic door test.',
     event: 'Last event:',
     error: 'Error:',
+    timer: 'Timer:',
     quick_start: 'Quick start',
     quick_help: 'Choose the test mode and number of doors, then press Start. Other parameters are filled in automatically.',
     mode: 'Test mode',
     door_count: 'Door count',
     duration: 'Test duration (hours)',
     debug: 'Debug mode (10x faster timing)',
+    schedule_enable: 'Schedule start',
+    schedule_start: 'Scheduled date and time',
+    schedule_state: 'Schedule:',
     start: 'Start',
     stop: 'Stop',
     status: 'System status',
@@ -51,22 +59,50 @@ const i18n = {
   },
 };
 
+let formInitialized = false;
+let formDirty = false;
+const formFields = ['mode', 'door_count', 'test_duration_hours', 'debug', 'schedule_enabled', 'scheduled_start'];
+
 function applyLang(lang) {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.dataset.i18n;
     if (i18n[lang]?.[key]) {
-      if (el.tagName === 'INPUT') {
-        el.value = i18n[lang][key];
+      const textNode = Array.from(el.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+      if (textNode) {
+        textNode.nodeValue = i18n[lang][key];
       } else {
-        const textNode = Array.from(el.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
-        if (textNode) {
-          textNode.nodeValue = i18n[lang][key];
-        } else {
-          el.textContent = i18n[lang][key];
-        }
+        el.textContent = i18n[lang][key];
       }
     }
   });
+}
+
+function markFormDirty() {
+  formDirty = true;
+}
+
+function attachFormDirtyHandlers() {
+  formFields.forEach((id) => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', markFormDirty);
+    el.addEventListener('change', markFormDirty);
+  });
+}
+
+function formatCountdown(seconds) {
+  if (seconds === null || seconds === undefined) {
+    return '-';
+  }
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  parts.push(String(hours).padStart(2, '0'));
+  parts.push(String(minutes).padStart(2, '0'));
+  parts.push(String(secs).padStart(2, '0'));
+  return parts.join(days ? ' ' : ':');
 }
 
 async function postJson(url, body = {}) {
@@ -75,11 +111,11 @@ async function postJson(url, body = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
     throw new Error(payload.error || payload.message || `Request failed: ${response.status}`);
   }
-  return response.json().catch(() => ({}));
+  return payload;
 }
 
 function updateDoorButtons(doorCount) {
@@ -88,19 +124,40 @@ function updateDoorButtons(doorCount) {
   });
 }
 
+function syncForm(status) {
+  if (status.test_running || status.schedule_status === 'WAITING') {
+    formDirty = false;
+  }
+  if (formInitialized && formDirty) {
+    return;
+  }
+  document.getElementById('mode').value = status.selected_mode || 'MT';
+  document.getElementById('door_count').value = String(status.selected_door_count || 4);
+  document.getElementById('test_duration_hours').value = status.selected_test_duration_hours || 12;
+  document.getElementById('debug').checked = Boolean(status.selected_debug);
+  document.getElementById('schedule_enabled').checked = Boolean(status.schedule_enabled);
+  document.getElementById('scheduled_start').value = status.scheduled_start || '';
+  formInitialized = true;
+}
+
 async function startTest() {
   const payload = {
     mode: document.getElementById('mode').value,
     door_count: parseInt(document.getElementById('door_count').value, 10),
     test_duration_hours: parseInt(document.getElementById('test_duration_hours').value, 10),
     debug: document.getElementById('debug').checked,
+    schedule_enabled: document.getElementById('schedule_enabled').checked,
+    scheduled_start: document.getElementById('scheduled_start').value,
   };
-  await postJson('/start', payload);
+  const result = await postJson('/start', payload);
+  formDirty = false;
   await refresh();
+  return result;
 }
 
 async function stopTest() {
   await postJson('/stop');
+  formDirty = false;
   await refresh();
 }
 
@@ -112,6 +169,7 @@ document.getElementById('lightOff').onclick = () => postJson('/light', { on: fal
 document.querySelectorAll('[data-door]').forEach((btn) => {
   btn.onclick = () => postJson(`/open/${btn.dataset.door}`).then(refresh).catch(showError);
 });
+attachFormDirtyHandlers();
 
 function showError(error) {
   document.getElementById('error').textContent = error.message;
@@ -135,29 +193,30 @@ async function refresh() {
   document.getElementById('activeDoorCount').textContent = status.door_count || '-';
   document.getElementById('activeDuration').textContent = status.test_duration_hours || '-';
   document.getElementById('activeDebug').textContent = status.debug ? 'ON' : 'OFF';
+  document.getElementById('scheduleState').textContent = status.schedule_status || 'IDLE';
+  document.getElementById('scheduleCountdown').textContent = status.schedule_status === 'WAITING'
+    ? `${status.scheduled_start || ''} (${formatCountdown(status.seconds_until_start)})`
+    : '-';
 
-  document.getElementById('mode').value = status.test_mode || 'MT';
-  document.getElementById('door_count').value = status.door_count || 4;
-  document.getElementById('test_duration_hours').value = status.test_duration_hours || 12;
-  document.getElementById('debug').checked = Boolean(status.debug);
+  syncForm(status);
 
   const doorsEl = document.getElementById('doors');
   doorsEl.innerHTML = '';
-  Object.entries(status.doors).slice(0, status.door_count || 5).forEach(([name, state]) => {
+  Object.entries(status.doors).slice(0, status.selected_door_count || 5).forEach(([name, state]) => {
     const div = document.createElement('div');
     div.className = `door ${state}`;
     div.textContent = `${name} ● ${state}`;
     doorsEl.appendChild(div);
   });
 
-  updateDoorButtons(status.door_count || 5);
+  updateDoorButtons(status.selected_door_count || 5);
   document.getElementById('cyclesData').textContent = JSON.stringify({
     cycles: cycles.cycles,
-    recent_events: (cycles.events || []).slice(-20),
+    recent_events: cycles.events || [],
   }, null, 2);
 }
 
 const userLang = navigator.language?.startsWith('uk') ? 'uk' : 'en';
 applyLang(userLang);
 refresh().catch(showError);
-setInterval(() => refresh().catch(showError), 5000);
+setInterval(() => refresh().catch(showError), 1000);
