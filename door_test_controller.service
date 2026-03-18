@@ -1,0 +1,16 @@
+[Unit]
+Description=Door Test Controller
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/door-test-system
+Environment=SIMULATION_MODE=0
+Environment=HOST=127.0.0.1
+Environment=MODBUS_AUTODETECT=1
+ExecStart=/home/pi/door-test-system/scripts/start_on_rpi.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
