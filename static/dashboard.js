@@ -2,6 +2,7 @@ const i18n = {
   uk: {
     title: 'Door Test Controller',
     subtitle: 'Запустіть сервер і натисніть одну кнопку нижче, щоб почати автоматичний тест дверей.',
+    language: 'Мова',
     event: 'Last event:',
     error: 'Error:',
     timer: 'Таймер:',
@@ -31,6 +32,7 @@ const i18n = {
   en: {
     title: 'Door Test Controller',
     subtitle: 'Start the server and press one button below to begin the automatic door test.',
+    language: 'Language',
     event: 'Last event:',
     error: 'Error:',
     timer: 'Timer:',
@@ -59,6 +61,7 @@ const i18n = {
   },
 };
 
+const LANG_STORAGE_KEY = 'door_test_ui_lang';
 let formInitialized = false;
 let formDirty = false;
 const formFields = ['mode', 'door_count', 'test_duration_hours', 'debug', 'schedule_enabled', 'scheduled_start'];
@@ -75,6 +78,20 @@ function applyLang(lang) {
       }
     }
   });
+}
+
+function setLanguage(lang) {
+  const selected = i18n[lang] ? lang : 'uk';
+  localStorage.setItem(LANG_STORAGE_KEY, selected);
+  document.documentElement.lang = selected;
+  document.getElementById('langSelect').value = selected;
+  applyLang(selected);
+}
+
+function initLanguage() {
+  const stored = localStorage.getItem(LANG_STORAGE_KEY);
+  const lang = stored && i18n[stored] ? stored : 'uk';
+  setLanguage(lang);
 }
 
 function markFormDirty() {
@@ -149,10 +166,9 @@ async function startTest() {
     schedule_enabled: document.getElementById('schedule_enabled').checked,
     scheduled_start: document.getElementById('scheduled_start').value,
   };
-  const result = await postJson('/start', payload);
+  await postJson('/start', payload);
   formDirty = false;
   await refresh();
-  return result;
 }
 
 async function stopTest() {
@@ -166,6 +182,7 @@ document.getElementById('stop').onclick = () => stopTest().catch(showError);
 document.getElementById('reset').onclick = () => postJson('/reset').then(refresh).catch(showError);
 document.getElementById('lightOn').onclick = () => postJson('/light', { on: true }).then(refresh).catch(showError);
 document.getElementById('lightOff').onclick = () => postJson('/light', { on: false }).then(refresh).catch(showError);
+document.getElementById('langSelect').addEventListener('change', (event) => setLanguage(event.target.value));
 document.querySelectorAll('[data-door]').forEach((btn) => {
   btn.onclick = () => postJson(`/open/${btn.dataset.door}`).then(refresh).catch(showError);
 });
@@ -202,10 +219,10 @@ async function refresh() {
 
   const doorsEl = document.getElementById('doors');
   doorsEl.innerHTML = '';
-  Object.entries(status.doors).slice(0, status.selected_door_count || 5).forEach(([name, state]) => {
+  Object.entries(status.doors).slice(0, status.selected_door_count || 5).forEach(([name, doorState]) => {
     const div = document.createElement('div');
-    div.className = `door ${state}`;
-    div.textContent = `${name} ● ${state}`;
+    div.className = `door ${doorState}`;
+    div.textContent = `${name} ● ${doorState}`;
     doorsEl.appendChild(div);
   });
 
@@ -216,7 +233,6 @@ async function refresh() {
   }, null, 2);
 }
 
-const userLang = navigator.language?.startsWith('uk') ? 'uk' : 'en';
-applyLang(userLang);
+initLanguage();
 refresh().catch(showError);
 setInterval(() => refresh().catch(showError), 1000);

@@ -4,10 +4,26 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+VENV_DIR="${PROJECT_DIR}/.venv_portable"
+WHEEL_DIR="${PROJECT_DIR}/third_party/wheels"
+
+if [[ ! -d "$VENV_DIR" ]]; then
+  python3 -m venv "$VENV_DIR"
+fi
+source "$VENV_DIR/bin/activate"
+
+if [[ "${OFFLINE_MODE:-1}" == "1" ]]; then
+  if [[ -d "$WHEEL_DIR" ]]; then
+    python -m pip install --no-index --find-links "$WHEEL_DIR" -r requirements.txt
+  else
+    echo "Offline mode requested, but ${WHEEL_DIR} not found."
+    echo "Run scripts/build_offline_bundle.sh once on an online machine and copy third_party/wheels."
+    exit 1
+  fi
+else
+  python -m pip install --upgrade pip
+  python -m pip install -r requirements.txt
+fi
 
 export SIMULATION_MODE="${SIMULATION_MODE:-0}"
 export HOST="${HOST:-127.0.0.1}"
@@ -48,7 +64,6 @@ import urllib.request
 url = os.environ['URL']
 try:
     urllib.request.urlopen(url, timeout=1)
-    print('ok')
 except Exception:
     raise SystemExit(1)
 PY
@@ -58,5 +73,8 @@ PY
   sleep 1
 done
 
-open_browser "$URL" || echo "Open the web interface manually: $URL"
+if [[ "${AUTO_OPEN_BROWSER}" == "1" ]]; then
+  open_browser "$URL" || echo "Open the web interface manually: $URL"
+fi
+
 wait "$APP_PID"

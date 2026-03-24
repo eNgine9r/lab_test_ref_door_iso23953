@@ -11,13 +11,33 @@
   --warning: #fff1c9;
 }
 
-* { box-sizing: border-box; }
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea,
+pre {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
   background: linear-gradient(180deg, #f7f9ff 0%, #edf2ff 100%);
   color: var(--text);
+  touch-action: manipulation;
 }
+
 .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
 .panel {
   background: var(--panel);
@@ -31,6 +51,10 @@ body {
 .eyebrow { margin: 0 0 8px; color: var(--accent); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .subtitle, .hint { color: var(--muted); line-height: 1.5; }
 .hero-status { min-width: 290px; }
+.lang-switch {
+  display: block;
+  margin-bottom: 12px;
+}
 .status-pill {
   display: inline-block;
   margin-bottom: 12px;

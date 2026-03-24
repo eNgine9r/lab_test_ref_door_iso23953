@@ -1,6 +1,7 @@
 [Unit]
-Description=Door Test Controller Web UI
-After=network.target
+Description=Door Test Controller Kiosk
+After=network-online.target graphical.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -9,10 +10,12 @@ Environment=SIMULATION_MODE=0
 Environment=HOST=127.0.0.1
 Environment=PORT=5000
 Environment=MODBUS_BACKEND=auto
-Environment=AUTO_OPEN_BROWSER=1
-ExecStart=/home/pi/door-test-system/scripts/start_on_rpi.sh
+Environment=OFFLINE_MODE=1
+Environment=AUTO_OPEN_BROWSER=0
+Environment=DISPLAY=:0
+ExecStart=/home/pi/door-test-system/scripts/kiosk_start.sh
 Restart=always
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

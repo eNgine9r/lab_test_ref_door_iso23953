@@ -161,3 +161,65 @@ logs/test.log
 - Для звичайного користувача основний сценарій — **веб-інтерфейс**.
 - `scripts/start_on_rpi.sh` тепер запускає саме веб-сервер і намагається автоматично відкрити браузер.
 - Якщо `pymodbus` нестабільний у вашому середовищі, використовуйте `MODBUS_BACKEND=minimalmodbus`.
+
+## Relay Auto ON (Relay #6)
+
+- Під час запуску `app.py` система автоматично вмикає relay #6 (Light) **до старту тестового циклу**.
+- Є retry-логіка (`STARTUP_LIGHT_RETRIES`/`STARTUP_LIGHT_RETRY_DELAY_SEC`) на випадок, якщо Modbus ще не готовий.
+
+## Offline mode (без інтернету)
+
+### Підготувати bundle на онлайн-машині
+
+```bash
+./scripts/build_offline_bundle.sh
+```
+
+Це створює локальний пакет залежностей у:
+
+```text
+third_party/wheels/
+```
+
+### Встановити офлайн на Raspberry Pi
+
+```bash
+./scripts/install_offline.sh
+```
+
+Скрипт використовує portable virtual environment:
+
+```text
+.venv_portable/
+```
+
+## Auto start на boot + kiosk
+
+Сервіс `door_test_controller.service` запускає:
+
+- `scripts/kiosk_start.sh`
+- веб-застосунок
+- Chromium у kiosk mode на `http://127.0.0.1:5000/`
+
+Приклад інсталяції сервісу:
+
+```bash
+sudo cp door_test_controller.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable door_test_controller.service
+sudo systemctl start door_test_controller.service
+```
+
+## Вертикальна орієнтація екрана
+
+`scripts/rotate_screen.sh` робить:
+
+1. Спробу прописати rotation у `config.txt` (для boot-level rotation).
+2. Якщо це недоступно — fallback через `xrandr` runtime rotation.
+
+## Touch UX та локалізація
+
+- Вимкнено глобальне випадкове виділення тексту, додано smooth scrolling.
+- Додано перемикач мови (UA/EN) у веб-інтерфейсі.
+- Мова за замовчуванням: **українська**.
+- Вибір мови зберігається у `localStorage`.

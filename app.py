@@ -21,6 +21,8 @@ from test_logic import ISO23953DoorTest
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = APP_DIR / "config.json"
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M"
+STARTUP_LIGHT_RETRIES = 8
+STARTUP_LIGHT_RETRY_DELAY_SEC = 2
 
 app = Flask(__name__)
 
@@ -81,7 +83,6 @@ logic = DoorLogic(controller, log_event, showcase_type=config.SHOWCASE_TYPE)
 state_lock = threading.Lock()
 test_lock = threading.Lock()
 current_test = None
-current_thread = None
 scheduler_thread = None
 scheduler_cancel = threading.Event()
 default_mode = str(runtime_config.get("mode", "MT")).upper()
@@ -152,6 +153,32 @@ class ObservableRelayController(RelayController):
 web_relay = ObservableRelayController(controller, relay_logger)
 
 
+def ensure_startup_light_on() -> bool:
+    if simulation_mode:
+        web_relay.set_light(True)
+        return True
+
+    for attempt in range(1, STARTUP_LIGHT_RETRIES + 1):
+        try:
+            if not controller.ping():
+                controller.connect()
+            web_relay.set_light(True)
+            with state_lock:
+                state["modbus_connected"] = True
+            log_event(f"relay 6 auto ON at startup (attempt {attempt})", "OK")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            relay_logger.warning("startup light relay attempt %s failed: %s", attempt, exc)
+            time.sleep(STARTUP_LIGHT_RETRY_DELAY_SEC)
+
+    with state_lock:
+        state["modbus_connected"] = False
+        state["status"] = "ERROR"
+        state["error_message"] = "failed to enable relay 6 on startup"
+    log_event("failed to enable relay 6 on startup", "ERROR")
+    return False
+
+
 def parse_schedule_datetime(raw_value: str) -> str:
     if not raw_value:
         return ""
@@ -159,7 +186,6 @@ def parse_schedule_datetime(raw_value: str) -> str:
     if scheduled <= datetime.now():
         raise ValueError("Scheduled start must be in the future")
     return scheduled.strftime(DATETIME_FORMAT)
-
 
 
 def build_test_config(payload: dict) -> dict:
@@ -187,7 +213,6 @@ def build_test_config(payload: dict) -> dict:
     return config_data
 
 
-
 def apply_selected_state(test_config: dict):
     with state_lock:
         state["selected_mode"] = test_config["mode"]
@@ -196,7 +221,6 @@ def apply_selected_state(test_config: dict):
         state["selected_debug"] = test_config["debug"]
         state["schedule_enabled"] = bool(test_config.get("schedule", {}).get("enabled", False))
         state["scheduled_start"] = test_config.get("scheduled_start", "")
-
 
 
 def mark_test_active(test_config: dict):
@@ -214,13 +238,11 @@ def mark_test_active(test_config: dict):
         state["scheduled_start"] = test_config.get("scheduled_start", "")
 
 
-
 def run_iso_test(test_config: dict):
-    global current_test, current_thread
+    global current_test
     test = ISO23953DoorTest(test_config, web_relay, relay_logger, register_signals=False)
     with test_lock:
         current_test = test
-        current_thread = threading.current_thread()
 
     try:
         relay_logger.info(
@@ -258,8 +280,6 @@ def run_iso_test(test_config: dict):
                 state["schedule_status"] = "IDLE"
         with test_lock:
             current_test = None
-            current_thread = None
-
 
 
 def launch_test(test_config: dict):
@@ -269,7 +289,6 @@ def launch_test(test_config: dict):
     thread.start()
     log_event(f"test start ({test_config['mode']})", "OK")
     return thread
-
 
 
 def schedule_test_run(test_config: dict):
@@ -454,6 +473,8 @@ if __name__ == "__main__":
         log_event("web interface ready", "OK")
     else:
         log_event("modbus connect failed", "ERROR")
+
+    ensure_startup_light_on()
 
     if os.getenv("AUTO_OPEN_BROWSER", "0") in {"1", "true", "True"}:
         timer = threading.Timer(1.5, lambda: webbrowser.open(f"http://{config.HOST}:{config.PORT}/"))
