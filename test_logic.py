@@ -1,3 +1,5 @@
+import json
+import os
 import signal
 import threading
 import time
@@ -5,8 +7,8 @@ import time
 
 class ISO23953DoorTest:
     MODES = {
-        'LT': {'open_time': 6, 'cycles_per_hour': 6},
-        'MT': {'open_time': 15, 'cycles_per_hour': 10},
+        'LT': {'hold_time': 6, 'cycles_per_hour': 6},
+        'MT': {'hold_time': 15, 'cycles_per_hour': 10},
     }
     STARTUP_OPEN_SECONDS = 180
     STARTUP_STABILIZE_SECONDS = 300
@@ -33,6 +35,18 @@ class ISO23953DoorTest:
 
     def _scale(self, seconds: float) -> float:
         return seconds / 10 if self.config.get('debug') else seconds
+
+    def _door_open_move_time(self) -> float:
+        cfg = self.config.get('door_open_time_sec')
+        if cfg is None:
+            cfg = os.getenv('DOOR_OPEN_TIME_SEC', '0.5')
+        return max(0.0, self._scale(float(cfg)))
+
+    def _door_close_move_time(self) -> float:
+        cfg = self.config.get('door_close_time_sec')
+        if cfg is None:
+            cfg = os.getenv('DOOR_CLOSE_TIME_SEC', '0.5')
+        return max(0.0, self._scale(float(cfg)))
 
     def _sleep_with_checks(self, seconds: float, step: float = 0.2):
         remaining = max(0.0, float(seconds))
@@ -72,20 +86,25 @@ class ISO23953DoorTest:
 
     def main_test(self, doors: int, hours: int, mode: str):
         profile = self.MODES[mode]
-        open_time = self._scale(profile['open_time'])
+        hold_time = self._scale(profile['hold_time'])
+        move_open_time = self._door_open_move_time()
+        move_close_time = self._door_close_move_time()
         cycles_per_hour = profile['cycles_per_hour']
+
         interval = self._scale(3600 / cycles_per_hour)
-        close_time = max(0, interval - open_time)
-        inter_door_delay = close_time / max(1, doors)
+        door_action_time = hold_time + move_open_time + move_close_time
+        remaining_interval = max(0.0, interval - door_action_time)
+        inter_door_delay = remaining_interval / max(1, doors)
 
         self.logger.info(
-            'main test start mode=%s doors=%s hours=%s open_time=%.2f interval=%.2f close_time=%.2f inter_door_delay=%.2f',
+            'main test start mode=%s doors=%s hours=%s hold_time=%.2f move_open=%.2f move_close=%.2f interval=%.2f inter_door_delay=%.2f',
             mode,
             doors,
             hours,
-            open_time,
+            hold_time,
+            move_open_time,
+            move_close_time,
             interval,
-            close_time,
             inter_door_delay,
         )
 
@@ -102,12 +121,37 @@ class ISO23953DoorTest:
                 for door in range(1, doors + 1):
                     if not self.running:
                         break
+
                     self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door}')
-                    self.logger.info('door %s opened', door)
-                    if not self._sleep_with_checks(open_time):
+                    self.logger.info('door %s opening started', door)
+                    if not self._sleep_with_checks(move_open_time):
                         break
+
+                    self.logger.info('door %s fully opened; hold phase start', door)
+                    if not self._sleep_with_checks(hold_time):
+                        break
+
                     self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door}')
-                    self.logger.info('door %s closed', door)
+                    self.logger.info('door %s closing started', door)
+                    if not self._sleep_with_checks(move_close_time):
+                        break
+
+                    total_cycle_time = move_open_time + hold_time + move_close_time
+                    self.logger.info(
+                        '%s',
+                        json.dumps(
+                            {
+                                'event': 'door_cycle',
+                                'door': door,
+                                'open_time': move_open_time,
+                                'hold_time': hold_time,
+                                'close_time': move_close_time,
+                                'total_cycle_time': total_cycle_time,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
+
                     if hasattr(self.relay, 'record_cycle'):
                         self.relay.record_cycle(door)
                     if not self._sleep_with_checks(inter_door_delay):

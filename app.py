@@ -50,6 +50,8 @@ def current_form_state() -> dict:
             "debug": state["selected_debug"],
             "schedule_enabled": state["schedule_enabled"],
             "scheduled_start": state["scheduled_start"],
+            "door_open_time_sec": state["selected_door_open_time_sec"],
+            "door_close_time_sec": state["selected_door_close_time_sec"],
         }
 
 
@@ -91,6 +93,8 @@ default_duration = int(runtime_config.get("test_duration_hours", 12))
 default_debug = bool(runtime_config.get("debug", False))
 default_scheduled_start = runtime_config.get("scheduled_start", "")
 default_schedule_enabled = bool(default_scheduled_start)
+default_door_open_time_sec = float(runtime_config.get("door_open_time_sec", os.getenv("DOOR_OPEN_TIME_SEC", "0.5")))
+default_door_close_time_sec = float(runtime_config.get("door_close_time_sec", os.getenv("DOOR_CLOSE_TIME_SEC", "0.5")))
 state = {
     "running": False,
     "status": "READY" if connected or simulation_mode else "ERROR",
@@ -117,6 +121,10 @@ state = {
     "schedule_enabled": default_schedule_enabled,
     "scheduled_start": default_scheduled_start,
     "schedule_status": "IDLE",
+    "selected_door_open_time_sec": default_door_open_time_sec,
+    "selected_door_close_time_sec": default_door_close_time_sec,
+    "door_open_time_sec": default_door_open_time_sec,
+    "door_close_time_sec": default_door_close_time_sec,
 }
 
 
@@ -196,6 +204,8 @@ def build_test_config(payload: dict) -> dict:
     debug = bool(payload.get("debug", current_form_state()["debug"]))
     schedule_enabled = bool(payload.get("schedule_enabled", False))
     scheduled_start = parse_schedule_datetime(payload.get("scheduled_start", "")) if schedule_enabled else ""
+    door_open_time_sec = max(0.0, float(payload.get("door_open_time_sec", current_form_state()["door_open_time_sec"])))
+    door_close_time_sec = max(0.0, float(payload.get("door_close_time_sec", current_form_state()["door_close_time_sec"])))
     config_data = dict(runtime_config)
     config_data.update(
         {
@@ -208,6 +218,8 @@ def build_test_config(payload: dict) -> dict:
                 "start_time": scheduled_start,
             },
             "scheduled_start": scheduled_start,
+            "door_open_time_sec": door_open_time_sec,
+            "door_close_time_sec": door_close_time_sec,
         }
     )
     return config_data
@@ -221,6 +233,8 @@ def apply_selected_state(test_config: dict):
         state["selected_debug"] = test_config["debug"]
         state["schedule_enabled"] = bool(test_config.get("schedule", {}).get("enabled", False))
         state["scheduled_start"] = test_config.get("scheduled_start", "")
+        state["selected_door_open_time_sec"] = float(test_config.get("door_open_time_sec", state["selected_door_open_time_sec"]))
+        state["selected_door_close_time_sec"] = float(test_config.get("door_close_time_sec", state["selected_door_close_time_sec"]))
 
 
 def mark_test_active(test_config: dict):
@@ -236,6 +250,8 @@ def mark_test_active(test_config: dict):
         state["debug"] = test_config["debug"]
         state["schedule_status"] = "IDLE"
         state["scheduled_start"] = test_config.get("scheduled_start", "")
+        state["door_open_time_sec"] = float(test_config.get("door_open_time_sec", state["door_open_time_sec"]))
+        state["door_close_time_sec"] = float(test_config.get("door_close_time_sec", state["door_close_time_sec"]))
 
 
 def run_iso_test(test_config: dict):
@@ -448,6 +464,10 @@ def get_status():
                 "scheduled_start": state["scheduled_start"],
                 "schedule_status": state["schedule_status"],
                 "seconds_until_start": seconds_until_start,
+                "selected_door_open_time_sec": state["selected_door_open_time_sec"],
+                "selected_door_close_time_sec": state["selected_door_close_time_sec"],
+                "door_open_time_sec": state["door_open_time_sec"],
+                "door_close_time_sec": state["door_close_time_sec"],
             }
         )
 

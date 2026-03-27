@@ -51,6 +51,12 @@
         <label data-i18n="duration">Тривалість тесту (год)
           <input id="test_duration_hours" type="number" min="1" max="168" value="12">
         </label>
+        <label data-i18n="door_open_time">Час відкриття дверей (сек)
+          <input id="door_open_time_sec" type="number" min="0" step="0.1" value="0.5">
+        </label>
+        <label data-i18n="door_close_time">Час закриття дверей (сек)
+          <input id="door_close_time_sec" type="number" min="0" step="0.1" value="0.5">
+        </label>
         <label class="checkbox-row">
           <input id="debug" type="checkbox">
           <span data-i18n="debug">Debug режим (час у 10 разів швидше)</span>
@@ -76,6 +82,8 @@
         <p><strong>Door count:</strong> <span id="activeDoorCount">-</span></p>
         <p><strong>Duration:</strong> <span id="activeDuration">-</span></p>
         <p><strong>Debug:</strong> <span id="activeDebug">-</span></p>
+        <p><strong data-i18n="door_open_time">Час відкриття дверей (сек)</strong>: <span id="activeDoorOpenTime">-</span></p>
+        <p><strong data-i18n="door_close_time">Час закриття дверей (сек)</strong>: <span id="activeDoorCloseTime">-</span></p>
         <p><strong data-i18n="schedule_state">Schedule:</strong> <span id="scheduleState">-</span></p>
         <p><strong data-i18n="light">Light relay:</strong> <span id="lightStatus">-</span></p>
         <p><strong>Modbus port:</strong> <span id="modbusPort">-</span></p>

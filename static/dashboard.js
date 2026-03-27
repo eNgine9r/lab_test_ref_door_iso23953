@@ -11,6 +11,8 @@ const i18n = {
     mode: 'Режим тесту',
     door_count: 'Кількість дверей',
     duration: 'Тривалість тесту (год)',
+    door_open_time: 'Час відкриття дверей (сек)',
+    door_close_time: 'Час закриття дверей (сек)',
     debug: 'Debug режим (час у 10 разів швидше)',
     schedule_enable: 'Запланувати запуск',
     schedule_start: 'Дата і час старту',
@@ -41,6 +43,8 @@ const i18n = {
     mode: 'Test mode',
     door_count: 'Door count',
     duration: 'Test duration (hours)',
+    door_open_time: 'Door opening time (sec)',
+    door_close_time: 'Door closing time (sec)',
     debug: 'Debug mode (10x faster timing)',
     schedule_enable: 'Schedule start',
     schedule_start: 'Scheduled date and time',
@@ -64,7 +68,7 @@ const i18n = {
 const LANG_STORAGE_KEY = 'door_test_ui_lang';
 let formInitialized = false;
 let formDirty = false;
-const formFields = ['mode', 'door_count', 'test_duration_hours', 'debug', 'schedule_enabled', 'scheduled_start'];
+const formFields = ['mode', 'door_count', 'test_duration_hours', 'door_open_time_sec', 'door_close_time_sec', 'debug', 'schedule_enabled', 'scheduled_start'];
 
 function applyLang(lang) {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -152,6 +156,8 @@ function syncForm(status) {
   document.getElementById('door_count').value = String(status.selected_door_count || 4);
   document.getElementById('test_duration_hours').value = status.selected_test_duration_hours || 12;
   document.getElementById('debug').checked = Boolean(status.selected_debug);
+  document.getElementById('door_open_time_sec').value = status.selected_door_open_time_sec ?? 0.5;
+  document.getElementById('door_close_time_sec').value = status.selected_door_close_time_sec ?? 0.5;
   document.getElementById('schedule_enabled').checked = Boolean(status.schedule_enabled);
   document.getElementById('scheduled_start').value = status.scheduled_start || '';
   formInitialized = true;
@@ -162,6 +168,8 @@ async function startTest() {
     mode: document.getElementById('mode').value,
     door_count: parseInt(document.getElementById('door_count').value, 10),
     test_duration_hours: parseInt(document.getElementById('test_duration_hours').value, 10),
+    door_open_time_sec: parseFloat(document.getElementById('door_open_time_sec').value),
+    door_close_time_sec: parseFloat(document.getElementById('door_close_time_sec').value),
     debug: document.getElementById('debug').checked,
     schedule_enabled: document.getElementById('schedule_enabled').checked,
     scheduled_start: document.getElementById('scheduled_start').value,
@@ -210,6 +218,8 @@ async function refresh() {
   document.getElementById('activeDoorCount').textContent = status.door_count || '-';
   document.getElementById('activeDuration').textContent = status.test_duration_hours || '-';
   document.getElementById('activeDebug').textContent = status.debug ? 'ON' : 'OFF';
+  document.getElementById('activeDoorOpenTime').textContent = status.door_open_time_sec ?? '-';
+  document.getElementById('activeDoorCloseTime').textContent = status.door_close_time_sec ?? '-';
   document.getElementById('scheduleState').textContent = status.schedule_status || 'IDLE';
   document.getElementById('scheduleCountdown').textContent = status.schedule_status === 'WAITING'
     ? `${status.scheduled_start || ''} (${formatCountdown(status.seconds_until_start)})`

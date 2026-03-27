@@ -13,5 +13,7 @@
     "baudrate": 9600,
     "slave_id": 1,
     "backend": "auto"
-  }
+  },
+  "door_open_time_sec": 0.5,
+  "door_close_time_sec": 0.5
 }
