@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Door Test Controller</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <section class="panel hero">
+      <div>
+        <p class="eyebrow">ISO 23953-2</p>
+        <h1 data-i18n="title">Door Test Controller</h1>
+        <p class="subtitle" data-i18n="subtitle">Запустіть сервер і натисніть одну кнопку нижче, щоб почати автоматичний тест дверей.</p>
+      </div>
+      <div class="hero-status">
+        <label class="lang-switch">
+          <span data-i18n="language">Мова</span>
+          <select id="langSelect">
+            <option value="uk">Українська</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <div class="status-pill" id="statusPill">READY</div>
+        <p><strong data-i18n="event">Last event:</strong> <span id="event">-</span></p>
+        <p><strong data-i18n="error">Error:</strong> <span id="error">-</span></p>
+        <p><strong data-i18n="timer">Timer:</strong> <span id="scheduleCountdown">-</span></p>
+        <p><strong data-i18n="rpi_clock">Raspberry Pi clock:</strong> <span id="rpiClock">-</span></p>
+      </div>
+    </section>
+
+    <section class="panel grid two">
+      <div>
+        <h2 data-i18n="quick_start">Швидкий запуск</h2>
+        <p class="hint" data-i18n="quick_help">Оберіть режим тесту, кількість дверей і натисніть «Старт». Інші параметри вже підставляються автоматично.</p>
+        <label data-i18n="mode">Режим тесту
+          <select id="mode">
+            <option value="MT">MT — Medium Temperature</option>
+            <option value="LT">LT — Low Temperature</option>
+          </select>
+        </label>
+        <label data-i18n="door_count">Кількість дверей
+          <select id="door_count">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <label data-i18n="duration">Тривалість тесту (год)
+          <input id="test_duration_hours" type="number" min="1" max="168" value="12">
+        </label>
+        <label data-i18n="door_open_time">Час відкриття дверей (сек)
+          <input id="door_open_time_sec" type="number" min="0" step="0.1" value="0.5">
+        </label>
+        <label data-i18n="door_close_time">Час закриття дверей (сек)
+          <input id="door_close_time_sec" type="number" min="0" step="0.1" value="0.5">
+        </label>
+        <label class="checkbox-row">
+          <input id="debug" type="checkbox">
+          <span data-i18n="debug">Debug режим (час у 10 разів швидше)</span>
+        </label>
+        <label class="checkbox-row">
+          <input id="schedule_enabled" type="checkbox">
+          <span data-i18n="schedule_enable">Запланувати запуск</span>
+        </label>
+        <label data-i18n="schedule_start">Дата і час старту
+          <div id="schedulePickerWrap" class="schedule-picker-wrap">
+            <input id="scheduled_start_display" type="text" readonly placeholder="dd/MM/yyyy HH:mm" autocomplete="off">
+            <button id="scheduled_start_icon" type="button" class="calendar-btn" aria-label="Open calendar">📅</button>
+            <input id="scheduled_start" type="datetime-local" lang="uk-UA" class="native-schedule-picker" tabindex="-1" aria-hidden="true">
+          </div>
+        </label>
+        <label class="checkbox-row">
+          <input id="post_test_light_enabled" type="checkbox">
+          <span data-i18n="post_test_light_enable">Enable post-test light activation</span>
+        </label>
+        <div class="grid two post-test-delay">
+          <label data-i18n="post_test_light_delay_hours">Post-test delay (hours)
+            <input id="post_test_light_delay_hours" type="number" min="0" max="72" value="0">
+          </label>
+          <label data-i18n="post_test_light_delay_minutes">Post-test delay (minutes)
+            <input id="post_test_light_delay_minutes" type="number" min="0" max="59" value="0">
+          </label>
+        </div>
+        <div class="primary-actions">
+          <button id="start" class="primary" data-i18n="start">Старт</button>
+          <button id="stop" class="secondary" data-i18n="stop">Стоп</button>
+        </div>
+      </div>
+
+      <div>
+        <h2 data-i18n="status">Статус системи</h2>
+        <p><strong data-i18n="system_status">System status:</strong> <span id="status">-</span></p>
+        <p><strong data-i18n="test">Test:</strong> <span id="running">-</span></p>
+        <p><strong>Mode:</strong> <span id="activeMode">-</span></p>
+        <p><strong>Door count:</strong> <span id="activeDoorCount">-</span></p>
+        <p><strong>Duration:</strong> <span id="activeDuration">-</span></p>
+        <p><strong>Debug:</strong> <span id="activeDebug">-</span></p>
+        <p><strong data-i18n="door_open_time">Час відкриття дверей (сек)</strong>: <span id="activeDoorOpenTime">-</span></p>
+        <p><strong data-i18n="door_close_time">Час закриття дверей (сек)</strong>: <span id="activeDoorCloseTime">-</span></p>
+        <p><strong data-i18n="schedule_state">Schedule:</strong> <span id="scheduleState">-</span></p>
+        <p><strong data-i18n="light">Light relay:</strong> <span id="lightStatus">-</span></p>
+        <p><strong data-i18n="post_test_light_state">Post-test light:</strong> <span id="postTestLightState">-</span></p>
+        <p><strong data-i18n="post_test_light_timer">Post-test timer:</strong> <span id="postTestLightTimer">-</span></p>
+        <p><strong>Modbus port:</strong> <span id="modbusPort">-</span></p>
+        <p><strong>Modbus backend:</strong> <span id="modbusBackend">-</span></p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 data-i18n="doors">Стан дверей</h2>
+      <div id="doors" class="door-grid"></div>
+    </section>
+
+    <section class="panel grid two">
+      <div>
+        <h2 data-i18n="manual_controls">Ручне керування</h2>
+        <p class="hint" data-i18n="manual_help">Сервісні кнопки для перевірки конкретних дверей або світла.</p>
+        <div class="buttons">
+          <button id="lightOn" class="secondary" data-i18n="light_on">Light ON</button>
+          <button id="lightOff" class="secondary" data-i18n="light_off">Light OFF</button>
+          <button id="reset" class="secondary" data-i18n="reset">Reset cycles</button>
+          <button data-door="1" class="secondary">Open door 1</button>
+          <button data-door="2" class="secondary">Open door 2</button>
+          <button data-door="3" class="secondary">Open door 3</button>
+          <button data-door="4" class="secondary">Open door 4</button>
+          <button data-door="5" class="secondary">Open door 5</button>
+        </div>
+      </div>
+
+      <div>
+        <h2 data-i18n="cycles">Cycles</h2>
+        <div class="cycles-panel">
+          <pre id="cyclesData">-</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
