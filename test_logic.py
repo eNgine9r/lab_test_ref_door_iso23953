@@ -3,6 +3,7 @@ import os
 import signal
 import threading
 import time
+from datetime import datetime, timedelta
 
 
 class ISO23953DoorTest:
@@ -36,6 +37,19 @@ class ISO23953DoorTest:
     def _scale(self, seconds: float) -> float:
         return seconds / 10 if self.config.get('debug') else seconds
 
+    @staticmethod
+    def _now_local() -> datetime:
+        return datetime.now().astimezone()
+
+    def _resolve_test_start_wall_time(self) -> datetime:
+        configured_start = self.config.get('test_start_time_iso')
+        if not configured_start:
+            return self._now_local()
+        parsed = datetime.fromisoformat(str(configured_start))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=self._now_local().tzinfo)
+        return parsed.astimezone()
+
     def _door_open_move_time(self) -> float:
         cfg = self.config.get('door_open_time_sec')
         if cfg is None:
@@ -68,23 +82,30 @@ class ISO23953DoorTest:
             self.logger.error('reconnect failed after: %s', description)
             raise
 
-    def startup_phase(self, doors: int):
+    @staticmethod
+    def _seconds_until_deadline(deadline_monotonic: float) -> float:
+        return max(0.0, deadline_monotonic - time.monotonic())
+
+    def startup_phase(self, doors: int, deadline_monotonic: float):
         self.logger.info('startup phase begin')
         for door in range(1, doors + 1):
-            if not self.running:
+            if not self.running or self._seconds_until_deadline(deadline_monotonic) <= 0:
                 return
             self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door} in startup')
             self.logger.info('startup door %s opened for load phase', door)
-            if not self._sleep_with_checks(self._scale(self.STARTUP_OPEN_SECONDS)):
+            wait_open = min(self._scale(self.STARTUP_OPEN_SECONDS), self._seconds_until_deadline(deadline_monotonic))
+            if not self._sleep_with_checks(wait_open):
                 return
             self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door} in startup')
             self.logger.info('startup door %s closed after load phase', door)
-        if self.running:
+
+        if self.running and self._seconds_until_deadline(deadline_monotonic) > 0:
             self.logger.info('startup stabilization begin')
-            self._sleep_with_checks(self._scale(self.STARTUP_STABILIZE_SECONDS))
+            wait_stabilize = min(self._scale(self.STARTUP_STABILIZE_SECONDS), self._seconds_until_deadline(deadline_monotonic))
+            self._sleep_with_checks(wait_stabilize)
         self.logger.info('startup phase end')
 
-    def main_test(self, doors: int, hours: int, mode: str):
+    def main_test(self, doors: int, mode: str, day_deadline_monotonic: float):
         profile = self.MODES[mode]
         hold_time = self._scale(profile['hold_time'])
         move_open_time = self._door_open_move_time()
@@ -97,10 +118,9 @@ class ISO23953DoorTest:
         inter_door_delay = remaining_interval / max(1, doors)
 
         self.logger.info(
-            'main test start mode=%s doors=%s hours=%s hold_time=%.2f move_open=%.2f move_close=%.2f interval=%.2f inter_door_delay=%.2f',
+            'main test start mode=%s doors=%s hold_time=%.2f move_open=%.2f move_close=%.2f interval=%.2f inter_door_delay=%.2f',
             mode,
             doors,
-            hours,
             hold_time,
             move_open_time,
             move_close_time,
@@ -110,52 +130,56 @@ class ISO23953DoorTest:
 
         self._with_reconnect(lambda: self.relay.set_light(True), 'turn light ON for day mode')
 
-        for hour in range(hours):
-            if not self.running:
-                break
-            self.logger.info('test hour %s/%s', hour + 1, hours)
-            for cycle in range(cycles_per_hour):
-                if not self.running:
+        cycle_counter = 0
+        while self.running and self._seconds_until_deadline(day_deadline_monotonic) > 0:
+            cycle_counter += 1
+            self.logger.info('day cycle %s', cycle_counter)
+
+            for door in range(1, doors + 1):
+                if not self.running or self._seconds_until_deadline(day_deadline_monotonic) <= 0:
                     break
-                self.logger.info('cycle %s/%s in hour %s', cycle + 1, cycles_per_hour, hour + 1)
-                for door in range(1, doors + 1):
-                    if not self.running:
-                        break
 
-                    self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door}')
-                    self.logger.info('door %s opening started', door)
-                    if not self._sleep_with_checks(move_open_time):
-                        break
+                self._with_reconnect(lambda d=door: self.relay.open_relay(d), f'open door {door}')
+                self.logger.info('door %s opening started', door)
+                if not self._sleep_with_checks(min(move_open_time, self._seconds_until_deadline(day_deadline_monotonic))):
+                    break
 
-                    self.logger.info('door %s fully opened; hold phase start', door)
-                    if not self._sleep_with_checks(hold_time):
-                        break
+                if self._seconds_until_deadline(day_deadline_monotonic) <= 0:
+                    break
 
-                    self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door}')
-                    self.logger.info('door %s closing started', door)
-                    if not self._sleep_with_checks(move_close_time):
-                        break
+                self.logger.info('door %s fully opened; hold phase start', door)
+                hold_wait = min(hold_time, self._seconds_until_deadline(day_deadline_monotonic))
+                if not self._sleep_with_checks(hold_wait):
+                    break
 
-                    total_cycle_time = move_open_time + hold_time + move_close_time
-                    self.logger.info(
-                        '%s',
-                        json.dumps(
-                            {
-                                'event': 'door_cycle',
-                                'door': door,
-                                'open_time': move_open_time,
-                                'hold_time': hold_time,
-                                'close_time': move_close_time,
-                                'total_cycle_time': total_cycle_time,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    )
+                self._with_reconnect(lambda d=door: self.relay.close_relay(d), f'close door {door}')
+                self.logger.info('door %s closing started', door)
+                if not self._sleep_with_checks(move_close_time):
+                    break
 
-                    if hasattr(self.relay, 'record_cycle'):
-                        self.relay.record_cycle(door)
-                    if not self._sleep_with_checks(inter_door_delay):
-                        break
+                total_cycle_time = move_open_time + hold_wait + move_close_time
+                self.logger.info(
+                    '%s',
+                    json.dumps(
+                        {
+                            'event': 'door_cycle',
+                            'door': door,
+                            'open_time': move_open_time,
+                            'hold_time': hold_wait,
+                            'close_time': move_close_time,
+                            'total_cycle_time': total_cycle_time,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+
+                if hasattr(self.relay, 'record_cycle'):
+                    self.relay.record_cycle(door)
+
+                if self._seconds_until_deadline(day_deadline_monotonic) <= 0:
+                    break
+                if not self._sleep_with_checks(min(inter_door_delay, self._seconds_until_deadline(day_deadline_monotonic))):
+                    break
 
         self.logger.info('main test end')
 
@@ -168,12 +192,52 @@ class ISO23953DoorTest:
     def run(self):
         mode = self.config.get('mode', 'LT').upper()
         doors = max(1, min(5, int(self.config.get('doors', 1))))
-        hours = int(self.config.get('test_duration_hours', 12))
+        day_mode_hours = float(self.config.get('test_duration_hours', 12))
 
         if mode not in self.MODES:
             raise ValueError(f'Unsupported mode: {mode}')
 
-        self.startup_phase(doors)
-        if self.running:
-            self.main_test(doors, hours, mode)
+        test_start_wall_time = self._resolve_test_start_wall_time()
+        day_mode_duration_sec = self._scale(day_mode_hours * 3600)
+        calculated_night_mode_time = test_start_wall_time + timedelta(seconds=day_mode_duration_sec)
+
+        monotonic_start = time.monotonic()
+        day_deadline_monotonic = monotonic_start + day_mode_duration_sec
+
+        self.logger.info(
+            '%s',
+            json.dumps(
+                {
+                    'event': 'mode_transition_plan',
+                    'testStartTime': test_start_wall_time.isoformat(),
+                    'calculatedNightModeTime': calculated_night_mode_time.isoformat(),
+                    'actualNightModeTime': None,
+                    'currentMode': 'day',
+                    'reason': 'test_start',
+                },
+                ensure_ascii=False,
+            ),
+        )
+
+        self.startup_phase(doors, day_deadline_monotonic)
+        if self.running and self._seconds_until_deadline(day_deadline_monotonic) > 0:
+            self.main_test(doors, mode, day_deadline_monotonic)
+
+        actual_night_mode_time = self._now_local()
+        reason = 'day_mode_duration_elapsed' if self._seconds_until_deadline(day_deadline_monotonic) <= 0 else 'stopped_early'
+        self.logger.info(
+            '%s',
+            json.dumps(
+                {
+                    'event': 'mode_transition',
+                    'testStartTime': test_start_wall_time.isoformat(),
+                    'calculatedNightModeTime': calculated_night_mode_time.isoformat(),
+                    'actualNightModeTime': actual_night_mode_time.isoformat(),
+                    'currentMode': 'night',
+                    'reason': reason,
+                },
+                ensure_ascii=False,
+            ),
+        )
+
         self.night_mode()

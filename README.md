@@ -252,3 +252,15 @@ total_cycle_time = hold_time(LT/MT) + door_open_time_sec + door_close_time_sec
 ```
 
 > LT/MT лишається тільки часом у повністю відкритому стані, без часу руху.
+
+### Логи переходу Day → Night
+
+У логах фіксуються поля:
+
+- `testStartTime`
+- `calculatedNightModeTime`
+- `actualNightModeTime`
+- `currentMode`
+- `reason`
+
+Щоб можна було зіставити плановий і фактичний момент переходу.
