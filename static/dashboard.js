@@ -171,7 +171,8 @@ function syncForm(status) {
   document.getElementById('door_open_time_sec').value = status.selected_door_open_time_sec ?? 0.5;
   document.getElementById('door_close_time_sec').value = status.selected_door_close_time_sec ?? 0.5;
   document.getElementById('schedule_enabled').checked = Boolean(status.schedule_enabled);
-  document.getElementById('scheduled_start').value = formatForInputFromIso(status.scheduled_start || '');
+  document.getElementById('scheduled_start').value = normalizeIsoForNativeInput(status.scheduled_start || '');
+  document.getElementById('scheduled_start_display').value = formatForInputFromIso(status.scheduled_start || '');
   document.getElementById('post_test_light_enabled').checked = Boolean(status.selected_post_test_light_enabled);
   document.getElementById('post_test_light_delay_hours').value = status.selected_post_test_light_delay_hours ?? 0;
   document.getElementById('post_test_light_delay_minutes').value = status.selected_post_test_light_delay_minutes ?? 0;
@@ -189,7 +190,7 @@ async function startTest() {
     door_close_time_sec: parseFloat(document.getElementById('door_close_time_sec').value),
     debug: document.getElementById('debug').checked,
     schedule_enabled: scheduleEnabled,
-    scheduled_start: scheduleEnabled ? parseDisplayDateTimeToIso(scheduledStartRaw) : '',
+    scheduled_start: scheduleEnabled ? scheduledStartRaw : '',
     post_test_light_enabled: document.getElementById('post_test_light_enabled').checked,
     post_test_light_delay_hours: parseInt(document.getElementById('post_test_light_delay_hours').value, 10),
     post_test_light_delay_minutes: parseInt(document.getElementById('post_test_light_delay_minutes').value, 10),
@@ -246,42 +247,26 @@ function formatForInputFromIso(value) {
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
-function parseDisplayDateTimeToIso(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
-  if (!match) {
-    throw new Error('Use date/time format: dd/MM/yyyy HH:mm');
+function normalizeIsoForNativeInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = String(date.getFullYear());
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+}
+
+function openSchedulePicker() {
+  const nativeInput = document.getElementById('scheduled_start');
+  if (nativeInput.showPicker) {
+    nativeInput.showPicker();
+    return;
   }
-
-  const [, dd, mm, yyyy, hh, min] = match;
-  const day = Number(dd);
-  const month = Number(mm);
-  const year = Number(yyyy);
-  const hours = Number(hh);
-  const minutes = Number(min);
-
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hours > 23 || minutes > 59) {
-    throw new Error('Invalid date/time values');
-  }
-
-  const date = new Date(year, month - 1, day, hours, minutes, 0, 0);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day ||
-    date.getHours() !== hours ||
-    date.getMinutes() !== minutes
-  ) {
-    throw new Error('Invalid calendar date');
-  }
-
-  const yyyyPart = String(year).padStart(4, '0');
-  const mmPart = String(month).padStart(2, '0');
-  const ddPart = String(day).padStart(2, '0');
-  const hhPart = String(hours).padStart(2, '0');
-  const minPart = String(minutes).padStart(2, '0');
-  return `${yyyyPart}-${mmPart}-${ddPart}T${hhPart}:${minPart}`;
+  nativeInput.focus();
+  nativeInput.click();
 }
 
 async function refresh() {
@@ -337,14 +322,19 @@ refresh().catch(showError);
 setInterval(() => refresh().catch(showError), 1000);
 
 const scheduledStartInput = document.getElementById('scheduled_start');
-scheduledStartInput.addEventListener('blur', () => {
-  const v = scheduledStartInput.value.trim();
-  if (!v) return;
-  try {
-    const iso = parseDisplayDateTimeToIso(v);
-    scheduledStartInput.value = formatForInputFromIso(iso);
-  } catch (_err) {
-    // keep value so user can correct it
-  }
+const scheduledStartDisplay = document.getElementById('scheduled_start_display');
+const schedulePickerWrap = document.getElementById('schedulePickerWrap');
+const schedulePickerIcon = document.getElementById('scheduled_start_icon');
+
+schedulePickerWrap.addEventListener('click', () => openSchedulePicker());
+scheduledStartDisplay.addEventListener('click', () => openSchedulePicker());
+schedulePickerIcon.addEventListener('click', (event) => {
+  event.preventDefault();
+  openSchedulePicker();
+});
+
+scheduledStartInput.addEventListener('change', () => {
+  scheduledStartDisplay.value = formatForInputFromIso(scheduledStartInput.value);
+  markFormDirty();
 });
 

@@ -125,4 +125,38 @@ pre {
 .post-test-delay{margin-top:8px;}
 #rpiClock{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:700;}
 
-#scheduled_start{font-variant-numeric: tabular-nums;}
+
+
+.schedule-picker-wrap {
+  margin-top: 8px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+#scheduled_start_display {
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  background: #fff;
+}
+
+.calendar-btn {
+  min-width: 52px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--secondary);
+  color: var(--accent-dark);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.native-schedule-picker {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
