@@ -13,7 +13,7 @@ from flask import Flask, jsonify, render_template, request
 import config
 from cycle_counter import CycleCounter
 from door_logic import DoorLogic
-from logger import get_test_logger
+from logger import get_rotating_handler, get_test_logger
 from modbus_client import ModbusClientFactory
 from relay_controller import RelayController
 from test_logic import ISO23953DoorTest
@@ -26,12 +26,12 @@ STARTUP_LIGHT_RETRY_DELAY_SEC = 2
 
 app = Flask(__name__)
 
-logging.basicConfig(
-    filename=config.LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M",
-)
+app_logger = logging.getLogger()
+app_logger.setLevel(logging.INFO)
+if not app_logger.handlers:
+    app_handler = get_rotating_handler(str(config.LOG_FILE), datefmt="%d/%m/%y %H:%M:%S")
+    app_handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", "%d/%m/%y %H:%M:%S"))
+    app_logger.addHandler(app_handler)
 
 
 def load_runtime_config() -> dict:
@@ -52,6 +52,9 @@ def current_form_state() -> dict:
             "scheduled_start": state["scheduled_start"],
             "door_open_time_sec": state["selected_door_open_time_sec"],
             "door_close_time_sec": state["selected_door_close_time_sec"],
+            "post_test_light_enabled": state["selected_post_test_light_enabled"],
+            "post_test_light_delay_hours": state["selected_post_test_light_delay_hours"],
+            "post_test_light_delay_minutes": state["selected_post_test_light_delay_minutes"],
         }
 
 
@@ -87,6 +90,8 @@ test_lock = threading.Lock()
 current_test = None
 scheduler_thread = None
 scheduler_cancel = threading.Event()
+post_test_timer_thread = None
+post_test_timer_cancel = threading.Event()
 default_mode = str(runtime_config.get("mode", "MT")).upper()
 default_doors = max(1, min(int(runtime_config.get("doors", config.DOOR_COUNT)), 5))
 default_duration = int(runtime_config.get("test_duration_hours", 12))
@@ -125,6 +130,14 @@ state = {
     "selected_door_close_time_sec": default_door_close_time_sec,
     "door_open_time_sec": default_door_open_time_sec,
     "door_close_time_sec": default_door_close_time_sec,
+    "selected_post_test_light_enabled": bool(runtime_config.get("post_test_light_enabled", False)),
+    "selected_post_test_light_delay_hours": int(runtime_config.get("post_test_light_delay_hours", 0)),
+    "selected_post_test_light_delay_minutes": int(runtime_config.get("post_test_light_delay_minutes", 0)),
+    "post_test_light_enabled": bool(runtime_config.get("post_test_light_enabled", False)),
+    "post_test_light_delay_hours": int(runtime_config.get("post_test_light_delay_hours", 0)),
+    "post_test_light_delay_minutes": int(runtime_config.get("post_test_light_delay_minutes", 0)),
+    "post_test_light_status": "IDLE",
+    "post_test_light_remaining_seconds": None,
 }
 
 
@@ -145,7 +158,7 @@ class ObservableRelayController(RelayController):
             else:
                 _set_door_state(channel, "open")
         if channel != self.LIGHT_CHANNEL:
-            counter.add_transition_event(channel - 1, "open", datetime.now().isoformat(timespec="seconds"))
+            counter.add_transition_event(channel - 1, "open", datetime.now().strftime("%d/%m/%y %H:%M:%S"))
 
     def close_relay(self, channel: int):
         super().close_relay(channel)
@@ -155,7 +168,7 @@ class ObservableRelayController(RelayController):
             else:
                 _set_door_state(channel, "closed")
         if channel != self.LIGHT_CHANNEL:
-            counter.add_transition_event(channel - 1, "close", datetime.now().isoformat(timespec="seconds"))
+            counter.add_transition_event(channel - 1, "close", datetime.now().strftime("%d/%m/%y %H:%M:%S"))
 
 
 web_relay = ObservableRelayController(controller, relay_logger)
@@ -206,6 +219,10 @@ def build_test_config(payload: dict) -> dict:
     scheduled_start = parse_schedule_datetime(payload.get("scheduled_start", "")) if schedule_enabled else ""
     door_open_time_sec = max(0.0, float(payload.get("door_open_time_sec", current_form_state()["door_open_time_sec"])))
     door_close_time_sec = max(0.0, float(payload.get("door_close_time_sec", current_form_state()["door_close_time_sec"])))
+    post_test_light_enabled = bool(payload.get("post_test_light_enabled", current_form_state()["post_test_light_enabled"]))
+    post_test_light_delay_hours = max(0, int(payload.get("post_test_light_delay_hours", current_form_state()["post_test_light_delay_hours"])))
+    post_test_light_delay_minutes = max(0, min(59, int(payload.get("post_test_light_delay_minutes", current_form_state()["post_test_light_delay_minutes"]))))
+
     config_data = dict(runtime_config)
     config_data.update(
         {
@@ -220,6 +237,9 @@ def build_test_config(payload: dict) -> dict:
             "scheduled_start": scheduled_start,
             "door_open_time_sec": door_open_time_sec,
             "door_close_time_sec": door_close_time_sec,
+            "post_test_light_enabled": post_test_light_enabled,
+            "post_test_light_delay_hours": post_test_light_delay_hours,
+            "post_test_light_delay_minutes": post_test_light_delay_minutes,
         }
     )
     return config_data
@@ -235,6 +255,9 @@ def apply_selected_state(test_config: dict):
         state["scheduled_start"] = test_config.get("scheduled_start", "")
         state["selected_door_open_time_sec"] = float(test_config.get("door_open_time_sec", state["selected_door_open_time_sec"]))
         state["selected_door_close_time_sec"] = float(test_config.get("door_close_time_sec", state["selected_door_close_time_sec"]))
+        state["selected_post_test_light_enabled"] = bool(test_config.get("post_test_light_enabled", state["selected_post_test_light_enabled"]))
+        state["selected_post_test_light_delay_hours"] = int(test_config.get("post_test_light_delay_hours", state["selected_post_test_light_delay_hours"]))
+        state["selected_post_test_light_delay_minutes"] = int(test_config.get("post_test_light_delay_minutes", state["selected_post_test_light_delay_minutes"]))
 
 
 def mark_test_active(test_config: dict):
@@ -242,7 +265,7 @@ def mark_test_active(test_config: dict):
         state["running"] = True
         state["status"] = "RUNNING"
         state["error_message"] = ""
-        state["started_at"] = datetime.now().isoformat()
+        state["started_at"] = datetime.now().strftime("%d/%m/%y %H:%M:%S")
         state["door_count"] = test_config["doors"]
         state["test_mode"] = test_config["mode"]
         state["showcase_type"] = test_config["mode"]
@@ -252,10 +275,82 @@ def mark_test_active(test_config: dict):
         state["scheduled_start"] = test_config.get("scheduled_start", "")
         state["door_open_time_sec"] = float(test_config.get("door_open_time_sec", state["door_open_time_sec"]))
         state["door_close_time_sec"] = float(test_config.get("door_close_time_sec", state["door_close_time_sec"]))
+        state["post_test_light_enabled"] = bool(test_config.get("post_test_light_enabled", state["post_test_light_enabled"]))
+        state["post_test_light_delay_hours"] = int(test_config.get("post_test_light_delay_hours", state["post_test_light_delay_hours"]))
+        state["post_test_light_delay_minutes"] = int(test_config.get("post_test_light_delay_minutes", state["post_test_light_delay_minutes"]))
+        state["post_test_light_status"] = "IDLE"
+        state["post_test_light_remaining_seconds"] = None
+
+
+
+def cancel_post_test_timer():
+    post_test_timer_cancel.set()
+    with state_lock:
+        state["post_test_light_status"] = "IDLE"
+        state["post_test_light_remaining_seconds"] = None
+
+
+def schedule_post_test_light(test_config: dict):
+    global post_test_timer_thread
+    enabled = bool(test_config.get("post_test_light_enabled", False))
+    delay_seconds = int(test_config.get("post_test_light_delay_hours", 0)) * 3600 + int(test_config.get("post_test_light_delay_minutes", 0)) * 60
+
+    if not enabled:
+        relay_logger.info("post-test light activation disabled")
+        return
+
+    relay_logger.info(
+        "post-test light activation enabled, delay=%sh %sm",
+        int(test_config.get("post_test_light_delay_hours", 0)),
+        int(test_config.get("post_test_light_delay_minutes", 0)),
+    )
+
+    post_test_timer_cancel.clear()
+
+    def worker():
+        with state_lock:
+            state["post_test_light_status"] = "WAITING"
+            state["post_test_light_remaining_seconds"] = delay_seconds
+
+        started = time.monotonic()
+        while not post_test_timer_cancel.is_set():
+            elapsed = int(time.monotonic() - started)
+            remaining = max(0, delay_seconds - elapsed)
+            with state_lock:
+                state["post_test_light_remaining_seconds"] = remaining
+            if remaining <= 0:
+                break
+            time.sleep(1)
+
+        if post_test_timer_cancel.is_set():
+            relay_logger.info("post-test light timer canceled")
+            with state_lock:
+                state["post_test_light_status"] = "CANCELED"
+                state["post_test_light_remaining_seconds"] = None
+            return
+
+        try:
+            web_relay.set_light(True)
+            with state_lock:
+                state["showcase_type"] = "day"
+                state["post_test_light_status"] = "COMPLETED"
+                state["post_test_light_remaining_seconds"] = 0
+            relay_logger.info("post-test light activation completed")
+            log_event("post-test timer complete: light ON, day mode set", "OK")
+        except Exception as exc:  # noqa: BLE001
+            with state_lock:
+                state["post_test_light_status"] = "ERROR"
+                state["post_test_light_remaining_seconds"] = None
+            relay_logger.error("post-test light activation failed: %s", exc)
+            log_event(f"post-test light activation error: {exc}", "ERROR")
+
+    post_test_timer_thread = threading.Thread(target=worker, daemon=True)
+    post_test_timer_thread.start()
 
 
 def run_iso_test(test_config: dict):
     global current_test
+    cancel_post_test_timer()
     test = ISO23953DoorTest(test_config, web_relay, relay_logger, register_signals=False)
     with test_lock:
         current_test = test
@@ -279,6 +374,7 @@ def run_iso_test(test_config: dict):
                 state["status"] = "READY"
                 state["running"] = False
                 state["last_event"] = "test completed"
+            schedule_post_test_light(test_config)
     except Exception as exc:  # noqa: BLE001
         with state_lock:
             state["status"] = "ERROR"
@@ -337,6 +433,7 @@ def schedule_test_run(test_config: dict):
 
         launch_test({**test_config, "schedule": {"enabled": False, "start_time": ""}, "scheduled_start": ""})
 
+    cancel_post_test_timer()
     scheduler_cancel.clear()
     scheduler_thread = threading.Thread(target=worker, daemon=True)
     scheduler_thread.start()
@@ -367,6 +464,7 @@ def start_test():
         schedule_test_run(test_config)
         return jsonify({"message": "scheduled", "config": test_config})
 
+    cancel_post_test_timer()
     scheduler_cancel.clear()
     scheduler_thread = None
     launch_test(test_config)
@@ -376,6 +474,7 @@ def start_test():
 @app.route("/stop", methods=["POST"])
 def stop_test():
     scheduler_cancel.set()
+    cancel_post_test_timer()
     with test_lock:
         test = current_test
     if test is not None:
@@ -468,6 +567,15 @@ def get_status():
                 "selected_door_close_time_sec": state["selected_door_close_time_sec"],
                 "door_open_time_sec": state["door_open_time_sec"],
                 "door_close_time_sec": state["door_close_time_sec"],
+                "selected_post_test_light_enabled": state["selected_post_test_light_enabled"],
+                "selected_post_test_light_delay_hours": state["selected_post_test_light_delay_hours"],
+                "selected_post_test_light_delay_minutes": state["selected_post_test_light_delay_minutes"],
+                "post_test_light_enabled": state["post_test_light_enabled"],
+                "post_test_light_delay_hours": state["post_test_light_delay_hours"],
+                "post_test_light_delay_minutes": state["post_test_light_delay_minutes"],
+                "post_test_light_status": state["post_test_light_status"],
+                "post_test_light_remaining_seconds": state["post_test_light_remaining_seconds"],
+                "server_time": datetime.now().strftime("%d/%m/%y %H:%M:%S"),
             }
         )
 
@@ -475,6 +583,7 @@ def get_status():
 @atexit.register
 def _shutdown():
     scheduler_cancel.set()
+    cancel_post_test_timer()
     with test_lock:
         test = current_test
     if test is not None:

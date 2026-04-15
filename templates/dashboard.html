@@ -26,6 +26,7 @@
         <p><strong data-i18n="event">Last event:</strong> <span id="event">-</span></p>
         <p><strong data-i18n="error">Error:</strong> <span id="error">-</span></p>
         <p><strong data-i18n="timer">Timer:</strong> <span id="scheduleCountdown">-</span></p>
+        <p><strong data-i18n="rpi_clock">Raspberry Pi clock:</strong> <span id="rpiClock">-</span></p>
       </div>
     </section>
 
@@ -68,6 +69,18 @@
         <label data-i18n="schedule_start">Дата і час старту
           <input id="scheduled_start" type="datetime-local">
         </label>
+        <label class="checkbox-row">
+          <input id="post_test_light_enabled" type="checkbox">
+          <span data-i18n="post_test_light_enable">Enable post-test light activation</span>
+        </label>
+        <div class="grid two post-test-delay">
+          <label data-i18n="post_test_light_delay_hours">Post-test delay (hours)
+            <input id="post_test_light_delay_hours" type="number" min="0" max="72" value="0">
+          </label>
+          <label data-i18n="post_test_light_delay_minutes">Post-test delay (minutes)
+            <input id="post_test_light_delay_minutes" type="number" min="0" max="59" value="0">
+          </label>
+        </div>
         <div class="primary-actions">
           <button id="start" class="primary" data-i18n="start">Старт</button>
           <button id="stop" class="secondary" data-i18n="stop">Стоп</button>
@@ -86,6 +99,8 @@
         <p><strong data-i18n="door_close_time">Час закриття дверей (сек)</strong>: <span id="activeDoorCloseTime">-</span></p>
         <p><strong data-i18n="schedule_state">Schedule:</strong> <span id="scheduleState">-</span></p>
         <p><strong data-i18n="light">Light relay:</strong> <span id="lightStatus">-</span></p>
+        <p><strong data-i18n="post_test_light_state">Post-test light:</strong> <span id="postTestLightState">-</span></p>
+        <p><strong data-i18n="post_test_light_timer">Post-test timer:</strong> <span id="postTestLightTimer">-</span></p>
         <p><strong>Modbus port:</strong> <span id="modbusPort">-</span></p>
         <p><strong>Modbus backend:</strong> <span id="modbusBackend">-</span></p>
       </div>

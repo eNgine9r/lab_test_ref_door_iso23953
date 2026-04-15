@@ -121,3 +121,6 @@ pre {
   .door-grid { grid-template-columns: repeat(2, 1fr); }
   .hero-status { min-width: 0; }
 }
+
+.post-test-delay{margin-top:8px;}
+#rpiClock{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight:700;}

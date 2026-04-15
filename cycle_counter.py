@@ -41,7 +41,7 @@ class CycleCounter:
         with self._lock:
             self._events.append(
                 {
-                    "timestamp": event_time or datetime.now().isoformat(timespec="seconds"),
+                    "timestamp": event_time or datetime.now().strftime("%d/%m/%y %H:%M:%S"),
                     "door": f"door{door+1}",
                     "action": action,
                 }

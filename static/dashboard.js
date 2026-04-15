@@ -30,6 +30,12 @@ const i18n = {
     light_off: 'Світло ВИМК',
     reset: 'Скинути цикли',
     cycles: 'Цикли',
+    rpi_clock: 'Годинник Raspberry Pi:',
+    post_test_light_enable: 'Увімкнути світло після тесту',
+    post_test_light_delay_hours: 'Затримка після тесту (год)',
+    post_test_light_delay_minutes: 'Затримка після тесту (хв)',
+    post_test_light_state: 'Світло після тесту:',
+    post_test_light_timer: 'Таймер після тесту:',
   },
   en: {
     title: 'Door Test Controller',
@@ -62,13 +68,19 @@ const i18n = {
     light_off: 'Light OFF',
     reset: 'Reset cycles',
     cycles: 'Cycles',
+    rpi_clock: 'Raspberry Pi clock:',
+    post_test_light_enable: 'Enable post-test light activation',
+    post_test_light_delay_hours: 'Post-test delay (hours)',
+    post_test_light_delay_minutes: 'Post-test delay (minutes)',
+    post_test_light_state: 'Post-test light:',
+    post_test_light_timer: 'Post-test timer:',
   },
 };
 
 const LANG_STORAGE_KEY = 'door_test_ui_lang';
 let formInitialized = false;
 let formDirty = false;
-const formFields = ['mode', 'door_count', 'test_duration_hours', 'door_open_time_sec', 'door_close_time_sec', 'debug', 'schedule_enabled', 'scheduled_start'];
+const formFields = ['mode', 'door_count', 'test_duration_hours', 'door_open_time_sec', 'door_close_time_sec', 'debug', 'schedule_enabled', 'scheduled_start', 'post_test_light_enabled', 'post_test_light_delay_hours', 'post_test_light_delay_minutes'];
 
 function applyLang(lang) {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -160,6 +172,9 @@ function syncForm(status) {
   document.getElementById('door_close_time_sec').value = status.selected_door_close_time_sec ?? 0.5;
   document.getElementById('schedule_enabled').checked = Boolean(status.schedule_enabled);
   document.getElementById('scheduled_start').value = status.scheduled_start || '';
+  document.getElementById('post_test_light_enabled').checked = Boolean(status.selected_post_test_light_enabled);
+  document.getElementById('post_test_light_delay_hours').value = status.selected_post_test_light_delay_hours ?? 0;
+  document.getElementById('post_test_light_delay_minutes').value = status.selected_post_test_light_delay_minutes ?? 0;
   formInitialized = true;
 }
 
@@ -173,6 +188,9 @@ async function startTest() {
     debug: document.getElementById('debug').checked,
     schedule_enabled: document.getElementById('schedule_enabled').checked,
     scheduled_start: document.getElementById('scheduled_start').value,
+    post_test_light_enabled: document.getElementById('post_test_light_enabled').checked,
+    post_test_light_delay_hours: parseInt(document.getElementById('post_test_light_delay_hours').value, 10),
+    post_test_light_delay_minutes: parseInt(document.getElementById('post_test_light_delay_minutes').value, 10),
   };
   await postJson('/start', payload);
   formDirty = false;
@@ -200,6 +218,19 @@ function showError(error) {
   document.getElementById('error').textContent = error.message;
 }
 
+
+function formatLocalDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
 async function refresh() {
   const [status, cycles] = await Promise.all([
     fetch('/status').then((r) => r.json()),
@@ -222,7 +253,12 @@ async function refresh() {
   document.getElementById('activeDoorCloseTime').textContent = status.door_close_time_sec ?? '-';
   document.getElementById('scheduleState').textContent = status.schedule_status || 'IDLE';
   document.getElementById('scheduleCountdown').textContent = status.schedule_status === 'WAITING'
-    ? `${status.scheduled_start || ''} (${formatCountdown(status.seconds_until_start)})`
+    ? `${formatLocalDateTime(status.scheduled_start || '')} (${formatCountdown(status.seconds_until_start)})`
+    : '-';
+  document.getElementById('rpiClock').textContent = status.server_time || '-';
+  document.getElementById('postTestLightState').textContent = status.post_test_light_status || 'IDLE';
+  document.getElementById('postTestLightTimer').textContent = status.post_test_light_status === 'WAITING'
+    ? formatCountdown(status.post_test_light_remaining_seconds)
     : '-';
 
   syncForm(status);
