@@ -1,0 +1,19 @@
+{
+  "mode": "LT",
+  "doors": 3,
+  "test_duration_hours": 12,
+  "start_delay_sec": 0,
+  "debug": false,
+  "schedule": {
+    "enabled": false,
+    "start_time": "22:00"
+  },
+  "modbus": {
+    "port": "/dev/ttyUSB0",
+    "baudrate": 9600,
+    "slave_id": 1,
+    "backend": "auto"
+  },
+  "door_open_time_sec": 0.5,
+  "door_close_time_sec": 0.5
+}
